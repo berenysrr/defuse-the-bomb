@@ -1,4 +1,4 @@
-// GÜVENİLİR KÜRESEL GERÇEK ZAMANLI MQTT WEBSOCKET MOTORU (IMMUTABLE STATE RE-RENDER FIX)
+// GÜVENİLİR KÜRESEL GERÇEK ZAMANLI MQTT WEBSOCKET MOTORU (RETAINED STATE + QOS 1 + QUEUING FIX)
 
 import mqtt from 'mqtt';
 
@@ -58,8 +58,9 @@ class RoomManager {
 
       this.client.on('connect', () => {
         if (this.client) {
-          this.client.subscribe(topic, { qos: 0 });
-          // Baglanildiginda varsa mevcut state'i duyur
+          this.client.subscribe(topic, { qos: 1 });
+          
+          // Baglanildiginda mevcut oda durumunu retained olarak firlat
           if (this.roomState && this.roomState.players.length > 0) {
             this.publishToCloud(code, {
               type: 'STATE_UPDATE',
@@ -68,7 +69,7 @@ class RoomManager {
                 ...this.roomState,
                 players: [...this.roomState.players]
               }
-            });
+            }, true);
           }
         }
       });
@@ -91,7 +92,7 @@ class RoomManager {
             keepalive: 30
           });
           this.client.on('connect', () => {
-            if (this.client) this.client.subscribe(topic, { qos: 0 });
+            if (this.client) this.client.subscribe(topic, { qos: 1 });
           });
           this.client.on('message', (t, message) => {
             try {
@@ -124,6 +125,16 @@ class RoomManager {
 
     this.startStream(code);
 
+    // Initial broadcast
+    this.publishToCloud(code, {
+      type: 'STATE_UPDATE',
+      roomCode: code,
+      state: {
+        ...this.roomState,
+        players: [...this.roomState.players]
+      }
+    }, true);
+
     // Host Kalp Atışı: Her 1 saniyede oda durumunu yayınla
     this.heartbeatInterval = setInterval(() => {
       if (this.isHost && this.roomCode === code) {
@@ -134,7 +145,7 @@ class RoomManager {
             ...this.roomState,
             players: [...this.roomState.players]
           }
-        });
+        }, true);
       }
     }, 1000);
 
@@ -163,7 +174,7 @@ class RoomManager {
       player: this.myPlayerConfig
     };
 
-    // Anında Katılma İsteği Gönder
+    // Anında Katılma İsteği Gönder (MQTT bağlandığı an otomatik fırlatılır)
     this.publishToCloud(cleanCode, joinPayload);
 
     // Joiner Yeniden Deneme Döngüsü: Host bizi ekleyene kadar her 1s'de istek gönder
@@ -201,7 +212,7 @@ class RoomManager {
       inGameState: initialInGameState
     };
 
-    this.publishToCloud(this.roomCode, payload);
+    this.publishToCloud(this.roomCode, payload, true);
     this.notifyListeners(this.roomCode, payload);
   }
 
@@ -245,7 +256,6 @@ class RoomManager {
           };
         }
 
-        // Yeni dizi referansı yaratılarak React re-render zorlanır
         this.roomState.players = [...this.roomState.players, playerToAdd];
       }
 
@@ -258,7 +268,7 @@ class RoomManager {
         }
       };
 
-      this.publishToCloud(this.roomCode, statePayload);
+      this.publishToCloud(this.roomCode, statePayload, true);
       this.notifyListeners(this.roomCode, statePayload);
     }
 
@@ -324,13 +334,18 @@ class RoomManager {
   }
 
   // Broker Üzerinden Yayın Yap (WSS WebSocket)
-  publishToCloud(code, payload) {
+  publishToCloud(code, payload, retain = false) {
     if (!code || !payload) return;
     const topic = `defuse_bomb/room/${code}`;
     const msgStr = JSON.stringify(payload);
 
-    if (this.client && this.client.connected) {
-      this.client.publish(topic, msgStr, { qos: 0 });
+    if (this.client) {
+      try {
+        const isRetain = retain || payload.type === 'STATE_UPDATE';
+        this.client.publish(topic, msgStr, { qos: 1, retain: isRetain });
+      } catch (e) {
+        console.warn('MQTT publish error:', e);
+      }
     }
   }
 
