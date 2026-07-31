@@ -1,16 +1,20 @@
-// GÜVENİLİR PUBNUB RESMİ SDK MOTORU (OFFICIAL WEBSOCKET ENGINE)
+// GÜVENİLİR KÜRESEL GERÇEK ZAMANLI MQTT WEBSOCKET MOTORU
 
-const PUBNUB_SUB_KEY = 'demo';
-const PUBNUB_PUB_KEY = 'demo';
+import mqtt from 'mqtt';
+
+const BROKER_URLS = [
+  'wss://broker.emqx.io:8084/mqtt',
+  'wss://broker.hivemq.com:8000/mqtt'
+];
 
 class RoomManager {
   constructor() {
     this.roomCode = null;
     this.isHost = false;
     this.listeners = new Map();
-    this.myPlayerConfig = null;
-    this.pubnub = null;
+    this.client = null;
     this.heartbeatInterval = null;
+    this.myPlayerConfig = null;
 
     this.roomState = {
       code: null,
@@ -21,39 +25,89 @@ class RoomManager {
     };
   }
 
-  initPubNub(uuid) {
-    if (this.pubnub) return;
-
-    const PubNubSDK = window.PubNub;
-    if (PubNubSDK) {
-      this.pubnub = new PubNubSDK({
-        publishKey: PUBNUB_PUB_KEY,
-        subscribeKey: PUBNUB_SUB_KEY,
-        userId: uuid || 'user_' + Math.random().toString(36).substring(2, 8)
-      });
-    }
-  }
-
   stopStream() {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
-    if (this.pubnub && this.roomCode) {
+    if (this.client) {
       try {
-        this.pubnub.unsubscribe({ channels: [`defuse_bomb_room_${this.roomCode}`] });
+        if (this.roomCode) {
+          this.client.unsubscribe(`defuse_bomb/room/${this.roomCode}`);
+        }
+        this.client.end();
       } catch (e) {
         // ignore
       }
+      this.client = null;
+    }
+  }
+
+  startStream(code) {
+    this.stopStream();
+    this.roomCode = code;
+
+    const topic = `defuse_bomb/room/${code}`;
+
+    try {
+      this.client = mqtt.connect(BROKER_URLS[0], {
+        clientId: 'db_' + Math.random().toString(36).substring(2, 10),
+        keepalive: 30,
+        reconnectPeriod: 1000
+      });
+
+      this.client.on('connect', () => {
+        if (this.client) {
+          this.client.subscribe(topic, { qos: 0 });
+          // Baglanildiginda varsa mevcut state'i duyur
+          if (this.roomState && this.roomState.players.length > 0) {
+            this.publishToCloud(code, {
+              type: 'STATE_UPDATE',
+              roomCode: code,
+              state: this.roomState
+            });
+          }
+        }
+      });
+
+      this.client.on('message', (t, message) => {
+        try {
+          const payload = JSON.parse(message.toString());
+          this.handleCloudPayload(payload);
+        } catch (e) {
+          console.warn('MQTT message parse error:', e);
+        }
+      });
+
+      this.client.on('error', (err) => {
+        console.warn('MQTT primary broker error, retrying secondary...', err);
+        try {
+          if (this.client) this.client.end();
+          this.client = mqtt.connect(BROKER_URLS[1], {
+            clientId: 'db_fb_' + Math.random().toString(36).substring(2, 10),
+            keepalive: 30
+          });
+          this.client.on('connect', () => {
+            if (this.client) this.client.subscribe(topic, { qos: 0 });
+          });
+          this.client.on('message', (t, message) => {
+            try {
+              const payload = JSON.parse(message.toString());
+              this.handleCloudPayload(payload);
+            } catch (e) {}
+          });
+        } catch (fbErr) {
+          console.warn('Secondary broker error:', fbErr);
+        }
+      });
+    } catch (e) {
+      console.warn('MQTT connection failed:', e);
     }
   }
 
   // 1. ODA OLUŞTUR (Host)
   async createRoom(hostPlayerConfig) {
-    this.stopStream();
-
     const code = Math.random().toString(36).substring(2, 7).toUpperCase();
-    this.roomCode = code;
     this.isHost = true;
     this.myPlayerConfig = { ...hostPlayerConfig, isHost: true };
 
@@ -65,17 +119,9 @@ class RoomManager {
       inGameState: null
     };
 
-    // PubNub SDK Başlat ve Abone Ol
-    this.startPubNubStream(code);
+    this.startStream(code);
 
-    // Odanın oluşturulduğunu masaya duyur
-    await this.publishToCloud(code, {
-      type: 'STATE_UPDATE',
-      roomCode: code,
-      state: this.roomState
-    });
-
-    // Host Kalp Atışı: Her 1 saniyede güncel oda durumunu yayınla
+    // Host Kalp Atışı: Her 1 saniyede oda durumunu yayınla
     this.heartbeatInterval = setInterval(() => {
       if (this.isHost && this.roomCode === code) {
         this.publishToCloud(code, {
@@ -91,10 +137,7 @@ class RoomManager {
 
   // 2. ODAYA KATIL (Joiner)
   async joinRoom(code, playerConfig) {
-    this.stopStream();
-
     const cleanCode = code.trim().toUpperCase();
-    this.roomCode = cleanCode;
     this.isHost = false;
     this.myPlayerConfig = { ...playerConfig, isHost: false };
 
@@ -106,8 +149,7 @@ class RoomManager {
       inGameState: null
     };
 
-    // PubNub SDK Başlat ve Abone Ol
-    this.startPubNubStream(cleanCode);
+    this.startStream(cleanCode);
 
     const joinPayload = {
       type: 'JOIN_REQUEST',
@@ -150,7 +192,7 @@ class RoomManager {
       inGameState: initialInGameState
     };
 
-    await this.publishToCloud(this.roomCode, payload);
+    this.publishToCloud(this.roomCode, payload);
     this.notifyListeners(this.roomCode, payload);
   }
 
@@ -166,57 +208,8 @@ class RoomManager {
       inGameState: inGameStatePayload
     };
 
-    await this.publishToCloud(this.roomCode, payload);
+    this.publishToCloud(this.roomCode, payload);
     this.notifyListeners(this.roomCode, payload);
-  }
-
-  // 5. RESMİ PUBNUB CANLI AKIŞ MOTORU (WEBSOCKETS + AUTO RECONNECT)
-  startPubNubStream(code) {
-    const uuid = this.myPlayerConfig ? this.myPlayerConfig.id : 'user_' + Math.random().toString(36).substring(2, 8);
-    this.initPubNub(uuid);
-
-    const channel = `defuse_bomb_room_${code}`;
-
-    if (this.pubnub) {
-      this.pubnub.removeAllListeners();
-      this.pubnub.addListener({
-        message: (evt) => {
-          if (evt && evt.message) {
-            this.handleCloudPayload(evt.message);
-          }
-        }
-      });
-      this.pubnub.subscribe({ channels: [channel] });
-    } else {
-      // Fallback
-      this.startFallbackStream(code);
-    }
-  }
-
-  // REST Fallback (İkincil Yedek Akış)
-  startFallbackStream(code) {
-    const channel = `defuse_bomb_room_${code}`;
-    let timetoken = '0';
-
-    const poll = async () => {
-      if (this.roomCode !== code) return;
-      try {
-        const res = await fetch(`https://ps.pubnub.com/subscribe/${PUBNUB_SUB_KEY}/${channel}/0/${timetoken}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && Array.isArray(data[0])) {
-            if (data[1]) timetoken = data[1];
-            data[0].forEach(msg => this.handleCloudPayload(msg));
-          }
-        }
-      } catch (e) {
-        // ignore
-      }
-      if (this.roomCode === code) {
-        setTimeout(poll, 600);
-      }
-    };
-    poll();
   }
 
   // Buluttan Gelen Mesajları İşle
@@ -232,7 +225,6 @@ class RoomManager {
         this.roomState.players.push(payload.player);
       }
 
-      // Güncellenmiş oyuncu listesini yayınla
       const statePayload = {
         type: 'STATE_UPDATE',
         roomCode: this.roomCode,
@@ -290,25 +282,14 @@ class RoomManager {
     }
   }
 
-  // PubNub Üzerinden Yayın Yap
-  async publishToCloud(code, payload) {
-    try {
-      const channel = `defuse_bomb_room_${code}`;
-      if (this.pubnub) {
-        await this.pubnub.publish({
-          channel: channel,
-          message: payload
-        });
-      } else {
-        // Fallback POST
-        await fetch(`https://ps.pubnub.com/publish/${PUBNUB_PUB_KEY}/${PUBNUB_SUB_KEY}/0/${channel}/0`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-      }
-    } catch (e) {
-      console.warn('PubNub pub error:', e);
+  // Broker Üzerinden Yayın Yap (WSS WebSocket)
+  publishToCloud(code, payload) {
+    if (!code || !payload) return;
+    const topic = `defuse_bomb/room/${code}`;
+    const msgStr = JSON.stringify(payload);
+
+    if (this.client && this.client.connected) {
+      this.client.publish(topic, msgStr, { qos: 0 });
     }
   }
 
