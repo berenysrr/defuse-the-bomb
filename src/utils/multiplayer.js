@@ -1,4 +1,4 @@
-// GÜVENİLİR KÜRESEL İNTERNET ODA SENKRONİZASYON MOTORU (NTFY.SH REAL-TIME PUBSUB)
+// GÜVENİLİR KÜRESEL İNTERNET ODA SENKRONİZASYON MOTORU (NTFY.SH REAL-TIME PUBSUB + SINCE HISTORY)
 
 class RoomManager {
   constructor() {
@@ -26,11 +26,14 @@ class RoomManager {
       gameState: 'LOBBY'
     };
 
-    // Küresel Canlı PubSub Kanalına Abone Ol
+    // Küresel Canlı PubSub Kanalına Abone Ol (Geçmiş 10dk mesajları dahil)
     this.subscribeToGlobalChannel(code);
 
     // Oda Kuruldu Yayın Yap
-    this.broadcastStateToCloud(this.roomState);
+    setTimeout(() => {
+      this.broadcastStateToCloud(this.roomState);
+    }, 300);
+
     return code;
   }
 
@@ -49,13 +52,19 @@ class RoomManager {
     // Küresel Canlı PubSub Kanalına Abone Ol
     this.subscribeToGlobalChannel(cleanCode);
 
-    // Host'a Katılma İsteği Gönder (JOIN_REQUEST)
-    const joinPayload = {
-      type: 'JOIN_REQUEST',
-      roomCode: cleanCode,
-      player: playerConfig
+    // Katılma isteğini 3 defa tekrarla (Garantili Yayın)
+    const sendJoinReq = () => {
+      const joinPayload = {
+        type: 'JOIN_REQUEST',
+        roomCode: cleanCode,
+        player: playerConfig
+      };
+      this.publishToCloud(cleanCode, joinPayload);
     };
-    this.publishToCloud(cleanCode, joinPayload);
+
+    sendJoinReq();
+    setTimeout(sendJoinReq, 600);
+    setTimeout(sendJoinReq, 1500);
 
     return this.roomState;
   }
@@ -66,7 +75,8 @@ class RoomManager {
       this.eventSource.close();
     }
 
-    const channelUrl = `https://ntfy.sh/defuse_bomb_room_${code}/json`;
+    // `since=10m` ekleyerek geçmiş 10 dakikadaki tüm oda mesajlarını anında çeker!
+    const channelUrl = `https://ntfy.sh/defuse_bomb_room_${code}/json?since=10m`;
     this.eventSource = new EventSource(channelUrl);
 
     this.eventSource.onmessage = (event) => {
@@ -95,7 +105,20 @@ class RoomManager {
 
     // B) Katılımcılar Güncel Oda Durumunu Alır
     if (payload.type === 'STATE_UPDATE' && payload.state) {
-      this.roomState = payload.state;
+      // Eğer daha güncel bir oyuncu listesi geldiyse güncelle
+      if (payload.state.players && payload.state.players.length >= this.roomState.players.length) {
+        this.roomState = payload.state;
+      } else {
+        // Yeni katılan kendi oyuncusunu kaybetmemek için birleştir
+        const combined = [...this.roomState.players];
+        payload.state.players.forEach(p => {
+          if (!combined.some(c => c.id === p.id || c.name === p.name)) {
+            combined.push(p);
+          }
+        });
+        this.roomState.players = combined;
+      }
+
       this.notifyListeners({
         type: 'STATE_UPDATE',
         roomCode: this.roomCode,
@@ -106,7 +129,9 @@ class RoomManager {
     // C) Oyunu Başlat Bildirimi
     if (payload.type === 'GAME_START') {
       this.roomState.gameState = 'PLAYING';
-      if (payload.players) this.roomState.players = payload.players;
+      if (payload.players && payload.players.length > 0) {
+        this.roomState.players = payload.players;
+      }
       this.notifyListeners({
         type: 'GAME_START',
         roomCode: this.roomCode,
@@ -143,6 +168,7 @@ class RoomManager {
     try {
       fetch(`https://ntfy.sh/defuse_bomb_room_${code}`, {
         method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify(payload)
       }).catch(e => console.warn('ntfy publish error:', e));
     } catch (e) {}
