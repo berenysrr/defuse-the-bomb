@@ -19,14 +19,13 @@ const QUESTION_BANK = [
   { id: 3, question: "Türkiye'nin başkenti neresidir?", options: ["İstanbul", "Ankara", "İzmir", "Antalya"], correct: 1 },
   { id: 4, question: "Hangisi bir asal sayı DEĞİLDİR?", options: ["2", "7", "9", "13"], correct: 2 },
   { id: 5, question: "Güneş sistemindeki en büyük gezegen hangisidir?", options: ["Mars", "Jüpiter", "Satürn", "Venüs"], correct: 1 },
-  { id: 6, question: "Hangisi bir programlama dili DEĞİLDİR?", options: ["Python", "Java", "HTML", "C++"], correct: 2 },
+  { id: 6, isMiniGame: true, type: 'CODE_BREAKER' },
   { id: 7, question: "Satrançta en güçlü taş hangisidir?", options: ["Kale", "Vezir", "At", "Şah"], correct: 1 },
   { id: 8, question: "Hangisi tatlı bir meyvedir?", options: ["Elma", "Tuz", "Biber", "Soğan"], correct: 0 },
-  { id: 9, question: "Dünyanın en hızlı kara hayvanı hangisidir?", options: ["Çita", "Aslan", "Tavşan", "Kaplumbağa"], correct: 0 },
+  { id: 9, isMiniGame: true, type: 'REFLEX_TAP' },
   { id: 10, question: "Suyun kimyasal formülü nedir?", options: ["CO2", "H2O", "NaCl", "O2"], correct: 1 }
 ];
 
-// ZENGİNLEŞTİRİLMİŞ EĞLENCELİ KART DESTE TİPLERİ (ÇEŞİTLİLİK)
 const CARD_TYPES = [
   { id: 'PASS', name: '🔀 BOMBAYI PASLA', desc: 'Bombayı sıradaki oyuncuya at!', color: '#f97316' },
   { id: 'REVERSE', name: '🔄 YÖNÜ TERS ÇEVİR', desc: 'Tur yönünü tersine döndür!', color: '#a855f7' },
@@ -45,6 +44,11 @@ export function GameProvider({ children }) {
   const [timeLeft, setTimeLeft] = useState(10);
   const [lastPlayedCard, setLastPlayedCard] = useState(null);
   const [wireEffect, setWireEffect] = useState(null);
+
+  // Kaos Çarkı ve Tur Sayacı State'leri
+  const [turnCount, setTurnCount] = useState(0);
+  const [showChaosWheel, setShowChaosWheel] = useState(false);
+  const [doubleWireCutNext, setDoubleWireCutNext] = useState(false);
 
   const [players, setPlayers] = useState([
     { id: 0, name: 'Çılgın Maymun', avatar: AVATARS[0], lives: 3, hand: [], hasShield: false },
@@ -66,7 +70,6 @@ export function GameProvider({ children }) {
   const [usedQuestionIds, setUsedQuestionIds] = useState([]);
   const [logs, setLogs] = useState([]);
 
-  // RASTGELE KART ÇEKME (ÇEŞİTLİLİK GARANTİLİ)
   const getRandomCard = (existingHand = []) => {
     const existingIds = existingHand.map(c => c.id);
     let availableTypes = CARD_TYPES.filter(c => !existingIds.includes(c.id));
@@ -82,6 +85,9 @@ export function GameProvider({ children }) {
     setTurnIndex(0);
     setTurnDirection(1);
     setTimeLeft(10);
+    setTurnCount(0);
+    setShowChaosWheel(false);
+    setDoubleWireCutNext(false);
     setUsedQuestionIds([]);
     setLastPlayedCard(null);
     setWireEffect(null);
@@ -137,7 +143,7 @@ export function GameProvider({ children }) {
 
   useEffect(() => {
     let timerId;
-    if (gameState === 'PLAYING' && timeLeft > 0) {
+    if (gameState === 'PLAYING' && timeLeft > 0 && !showChaosWheel) {
       timerId = setInterval(() => {
         setTimeLeft(prev => {
           if (prev <= 1) {
@@ -150,7 +156,7 @@ export function GameProvider({ children }) {
       }, 1000);
     }
     return () => clearInterval(timerId);
-  }, [gameState, timeLeft]);
+  }, [gameState, timeLeft, showChaosWheel]);
 
   const handleTimeOut = () => {
     addLog(`⏰ ${players[turnIndex].name} yetişemedi!`);
@@ -163,9 +169,61 @@ export function GameProvider({ children }) {
     while (players[nextIdx].lives <= 0) {
       nextIdx = (nextIdx + turnDirection + total) % total;
     }
+    
+    const newTurnCount = turnCount + 1;
+    setTurnCount(newTurnCount);
     setTurnIndex(nextIdx);
-    pickNewQuestion();
+
+    // Her 3 Turda bir Kaos Çarkını Döndür!
+    if (newTurnCount % 3 === 0) {
+      setShowChaosWheel(true);
+    } else {
+      pickNewQuestion();
+    }
     addLog(`👉 SIRA: ${players[nextIdx].name}'TA!`);
+  };
+
+  // Kaos Çarkı Efektini Uygula
+  const applyChaosEvent = (event) => {
+    setShowChaosWheel(false);
+    if (!event) {
+      pickNewQuestion();
+      return;
+    }
+
+    switch (event.id) {
+      case 'SWAP_LIVES': {
+        const sorted = [...players].sort((a, b) => b.lives - a.lives);
+        const highestId = sorted[0].id;
+        const lowestId = sorted[sorted.length - 1].id;
+        if (highestId !== lowestId) {
+          const highLives = players[highestId].lives;
+          const lowLives = players[lowestId].lives;
+          setPlayers(prev => prev.map(p => {
+            if (p.id === highestId) return { ...p, lives: lowLives };
+            if (p.id === lowestId) return { ...p, lives: highLives };
+            return p;
+          }));
+          addLog(`🔄 ${players[highestId].name} ve ${players[lowestId].name} CANLARI TAKAS ETTİ!`);
+        }
+        break;
+      }
+      case 'SPEED_TURNS':
+        setTimeLeft(4);
+        addLog(`⚡ KAOS: Bomba süresi 4 saniyeye düşürüldü!`);
+        break;
+      case 'CARD_RAIN':
+        setPlayers(prev => prev.map(p => ({ ...p, hand: [...p.hand, getRandomCard(p.hand)] })));
+        addLog(`🎁 KAOS: Herkese +1 Ekstra Aksiyon Kartı Dağıtıldı!`);
+        break;
+      case 'DOUBLE_WIRE':
+        setDoubleWireCutNext(true);
+        addLog(`💥 KAOS: Sıradaki yanlış cevapta 2 kablo kesilecek!`);
+        break;
+      default:
+        break;
+    }
+    pickNewQuestion();
   };
 
   const answerQuestion = (optionIndex) => {
@@ -182,6 +240,17 @@ export function GameProvider({ children }) {
       passTurn();
     } else {
       addLog(`❌ Yanlış cevap! Kablo kesiliyor...`);
+      cutRandomWire();
+    }
+  };
+
+  const handleMiniGameResult = (isSuccess) => {
+    if (isSuccess) {
+      sounds.playBeep(1400, 0.15);
+      addLog(`🎯 MİNİ OYUN BAŞARILI! Bomba imha edildi.`);
+      passTurn();
+    } else {
+      addLog(`💥 MİNİ OYUN BAŞARISIZ! Kablo kesiliyor...`);
       cutRandomWire();
     }
   };
@@ -206,6 +275,15 @@ export function GameProvider({ children }) {
 
     setWireEffect({ color: chosenWire.color, isExplosion: chosenWire.id === explodingWireId });
     setTimeout(() => setWireEffect(null), 600);
+
+    if (doubleWireCutNext) {
+      setDoubleWireCutNext(false);
+      const remainingUncut = uncutWires.filter(w => w.id !== chosenWire.id);
+      if (remainingUncut.length > 0) {
+        const secondWire = remainingUncut[Math.floor(Math.random() * remainingUncut.length)];
+        setWires(prev => prev.map(w => w.id === secondWire.id ? { ...w, isCut: true } : w));
+      }
+    }
 
     if (chosenWire.id === explodingWireId) {
       if (players[turnIndex].hasShield) {
@@ -303,8 +381,11 @@ export function GameProvider({ children }) {
         logs,
         lastPlayedCard,
         wireEffect,
+        showChaosWheel,
         startGame,
         answerQuestion,
+        handleMiniGameResult,
+        applyChaosEvent,
         playCard
       }}
     >

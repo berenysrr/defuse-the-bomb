@@ -2,13 +2,27 @@ import React from 'react';
 import { GameProvider, useGame } from './context/GameContext';
 import Lobby from './components/Lobby';
 import QuestionCard from './components/QuestionCard';
+import MiniGameCard from './components/MiniGameCard';
+import ChaosWheelModal from './components/ChaosWheelModal';
 import PlayerHand from './components/PlayerHand';
 import GameLogs from './components/GameLogs';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trophy, RotateCcw, Shield, Scissors, Flame, Zap, Heart } from 'lucide-react';
+import { Trophy, RotateCcw, Shield, Scissors } from 'lucide-react';
 
 function GameBoard() {
-  const { gameState, startGame, players, turnIndex, timeLeft, wires, wireEffect } = useGame();
+  const { 
+    gameState, 
+    startGame, 
+    players, 
+    turnIndex, 
+    timeLeft, 
+    wires, 
+    wireEffect, 
+    currentQuestion, 
+    showChaosWheel, 
+    applyChaosEvent,
+    handleMiniGameResult 
+  } = useGame();
 
   if (gameState === 'LOBBY') {
     return <Lobby />;
@@ -76,7 +90,13 @@ function GameBoard() {
   return (
     <div className="modern-arena-wrapper">
       
-      {/* 🚀 1. ÜST BÖLÜM: HEADER VE SIRA BANNERİ */}
+      {/* 🎡 1. KAOS ÇARKI MODALI (HER 3 TURDA BİR) */}
+      <ChaosWheelModal
+        isVisible={showChaosWheel}
+        onComplete={applyChaosEvent}
+      />
+
+      {/* 🚀 2. ÜST BÖLÜM: HEADER VE SIRA BANNERİ */}
       <div style={{ width: '100%', maxWidth: '800px', margin: '0 auto 16px auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         
         {/* LOGO VE AKTİF OYUNCU DUYURUSU */}
@@ -109,7 +129,7 @@ function GameBoard() {
           </motion.div>
         </div>
 
-        {/* OYUNCULAR SIRASI (NET KALPLER VE AVATARLAR) */}
+        {/* OYUNCULAR SIRASI */}
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', width: '100%', flexWrap: 'wrap' }}>
           {players.map((p, idx) => {
             const isTurn = idx === turnIndex;
@@ -153,10 +173,10 @@ function GameBoard() {
         </div>
       </div>
 
-      {/* 💣 2. ORTA BÖLÜM: BÜYÜK BOMBA + KABLO KESME EFEKTİ + GÖRSEL KABLOLAR + SORU */}
+      {/* 💣 3. ORTA BÖLÜM: BÜYÜK BOMBA + KABLO EFEKTİ + GÖRSEL KABLOLAR + SORU / MİNİ OYUN */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', maxWidth: '700px', margin: '0 auto', position: 'relative' }}>
         
-        {/* KABLO KESİLME DURUM BANNERİ (NET VE GÖRSEL) */}
+        {/* KABLO KESİLME DURUM BANNERİ */}
         <AnimatePresence>
           {wireEffect && (
             <motion.div
@@ -190,7 +210,7 @@ function GameBoard() {
           )}
         </AnimatePresence>
 
-        {/* PARLAYAN CANLI BOMBA GÖRSELİ */}
+        {/* PARLAYAN CANLI BOMBA */}
         <motion.div
           animate={{ scale: timeLeft <= 3 ? [1, 1.2, 1] : [1, 1.05, 1] }}
           transition={{ repeat: Infinity, duration: timeLeft <= 3 ? 0.35 : 2 }}
@@ -219,7 +239,7 @@ function GameBoard() {
           </div>
         </motion.div>
 
-        {/* 5 NET GÖRSEL KABLO ÇUBUĞU */}
+        {/* 5 GÖRSEL KABLO ÇUBUĞU */}
         <div style={{ display: 'flex', gap: '10px', marginTop: '20px', marginBottom: '6px' }}>
           {wires.map(w => (
             <div
@@ -248,11 +268,15 @@ function GameBoard() {
           ))}
         </div>
 
-        {/* CANLI SORU KARTI */}
-        <QuestionCard />
+        {/* CANLI SORU VEYA MİNİ-OYUN */}
+        {currentQuestion?.isMiniGame ? (
+          <MiniGameCard miniGame={currentQuestion} onComplete={handleMiniGameResult} />
+        ) : (
+          <QuestionCard />
+        )}
       </div>
 
-      {/* 🎴 3. ALT BÖLÜM: SİZİN LÜKS AKSİYON KARTLARINIZ */}
+      {/* 🎴 4. ALT BÖLÜM: SİZİN LÜKS AKSİYON KARTLARINIZ */}
       <PlayerHand />
 
     </div>
