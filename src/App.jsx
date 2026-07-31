@@ -18,6 +18,7 @@ function GameBoard() {
     timeLeft, 
     wires, 
     wireEffect, 
+    lastPlayedCard,
     currentQuestion, 
     handleMiniGameResult 
   } = useGame();
@@ -128,8 +129,33 @@ function GameBoard() {
       {/* 💣 2. ORTA BÖLÜM: BÜYÜK BOMBA + KABLO EFEKTİ + GÖRSEL KABLOLAR + SORU / MİNİ OYUN */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', maxWidth: '700px', margin: '0 auto', position: 'relative' }}>
         
-        {/* KABLO KESİLME DURUM BANNERİ */}
+        {/* KABLO KESİLME VE KART OYNANMA BANNERLARİ */}
         <AnimatePresence>
+          {lastPlayedCard && (
+            <motion.div
+              initial={{ scale: 0.5, opacity: 0, y: -20 }}
+              animate={{ scale: 1.1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.5, opacity: 0 }}
+              style={{
+                position: 'absolute',
+                top: '-40px',
+                zIndex: 100,
+                background: 'linear-gradient(135deg, #8b5cf6, #6d28d9)',
+                border: '2px solid #c084fc',
+                boxShadow: '0 0 40px rgba(139, 92, 246, 0.8)',
+                padding: '10px 24px',
+                borderRadius: '20px',
+                color: '#ffffff',
+                fontWeight: '900',
+                fontSize: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px'
+              }}
+            >
+              <span>🃏 {lastPlayedCard.player?.toUpperCase()}: {lastPlayedCard.name} KARTINI OYNADI!</span>
+            </motion.div>
+          )}
           {wireEffect && (
             <motion.div
               initial={{ scale: 0.3, opacity: 0, y: 20 }}
