@@ -138,6 +138,20 @@ export function GameProvider({ children }) {
     addLog(`💥 ANİ ÖLÜM RULETİ BAŞLADI! Yanlış kabloyu kesen anında patlar!`);
   };
 
+  const sanitizePlayers = (playerList) => {
+    if (!Array.isArray(playerList)) return [];
+    return playerList.map((p, idx) => ({
+      ...p,
+      id: p.id !== undefined ? p.id : idx,
+      name: p.name || `Oyuncu ${idx + 1}`,
+      avatar: p.avatar || AVATARS[idx % AVATARS.length],
+      lives: p.lives !== undefined ? p.lives : 1,
+      score: p.score || 0,
+      hand: Array.isArray(p.hand) ? p.hand : [getRandomCard([])],
+      hasShield: !!p.hasShield
+    }));
+  };
+
   // OYUN İÇİ GERÇEK ZAMANLI DİNLEYİCİ (MULTIPLE DEVICES REALTIME SYNC)
   useEffect(() => {
     if (!activeRoomCode) return;
@@ -150,7 +164,7 @@ export function GameProvider({ children }) {
         if (s.turnIndex !== undefined) setTurnIndex(s.turnIndex);
         if (s.turnDirection !== undefined) setTurnDirection(s.turnDirection);
         if (s.timeLeft !== undefined) setTimeLeft(s.timeLeft);
-        if (s.players) setPlayers(s.players);
+        if (s.players) setPlayers(sanitizePlayers(s.players));
         if (s.wires) setWires(s.wires);
         if (s.currentQuestion) setCurrentQuestion(s.currentQuestion);
         if (s.explodingWireId) setExplodingWireId(s.explodingWireId);

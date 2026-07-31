@@ -1,7 +1,7 @@
 import React from 'react';
 import { useGame } from '../context/GameContext';
 import { Shield, Sparkles, Zap, RotateCcw, Shuffle, Scissors, Hourglass, RefreshCw, Hand } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 const CARD_ICONS = {
   'PASS': Shuffle,
@@ -14,23 +14,27 @@ const CARD_ICONS = {
   'STEAL': Hand
 };
 
-const TARGETED_CARDS = ['PASS', 'CUT_WIRE', 'STEAL'];
-
 export default function PlayerHand() {
-  const { players, turnIndex, playCard, gameState, lastPlayedCard, isMyTurn } = useGame();
-  const currentPlayer = players[turnIndex];
+  const { players, turnIndex, playCard, gameState, isMyTurn } = useGame();
 
-  if (gameState !== 'PLAYING' || !currentPlayer) return null;
+  if (gameState !== 'PLAYING' || !Array.isArray(players) || players.length === 0) return null;
+
+  const safeTurnIndex = turnIndex >= 0 && turnIndex < players.length ? turnIndex : 0;
+  const currentPlayer = players[safeTurnIndex];
+
+  if (!currentPlayer) return null;
+
+  const currentHand = Array.isArray(currentPlayer.hand) ? currentPlayer.hand : [];
 
   return (
     <div style={{ width: '100%', maxWidth: '750px', display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '16px', zIndex: 40, margin: '16px auto 0 auto' }}>
       
       {/* SİZİN OYUNCU KİMLİĞİNİZ VE ANİ ÖLÜM ROZETİ */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '14px', background: 'rgba(15, 23, 42, 0.95)', padding: '10px 24px', borderRadius: '20px', border: `2px solid ${isMyTurn ? '#ef4444' : '#64748b'}`, boxShadow: isMyTurn ? '0 0 30px rgba(239, 68, 68, 0.5)' : 'none', marginBottom: '14px' }}>
-        <span style={{ fontSize: '32px' }}>{currentPlayer.avatar?.icon}</span>
+        <span style={{ fontSize: '32px' }}>{currentPlayer.avatar?.icon || '🐵'}</span>
         <div>
           <div style={{ fontSize: '15px', fontWeight: '900', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span>{currentPlayer.name}</span>
+            <span>{currentPlayer.name || 'Oyuncu'}</span>
             {isMyTurn ? (
               <span style={{ color: '#ef4444', fontSize: '11px', background: 'rgba(239, 68, 68, 0.2)', padding: '2px 10px', borderRadius: '12px', fontWeight: '900' }}>
                 💥 SIRA SENDE! (HAMLE YAP)
@@ -51,18 +55,18 @@ export default function PlayerHand() {
       </div>
 
       {/* RENGÂRENK LÜKS AKSİYON KARTLARI */}
-      {currentPlayer.hand.length === 0 ? (
+      {currentHand.length === 0 ? (
         <p style={{ fontSize: '13px', color: '#94a3b8', background: 'rgba(0,0,0,0.6)', padding: '8px 20px', borderRadius: '12px', margin: 0 }}>
           Hiç aksiyon kartın kalmadı! Hızlı cevap vererek kart kazan! 🎁
         </p>
       ) : (
         <div style={{ display: 'flex', justifyContent: 'center', gap: '14px', width: '100%', flexWrap: 'wrap', opacity: isMyTurn ? 1 : 0.5 }}>
-          {currentPlayer.hand.map((card) => {
+          {currentHand.map((card) => {
             const CardIcon = CARD_ICONS[card.id] || Sparkles;
 
             return (
               <motion.div
-                key={card.uniqueId}
+                key={card.uniqueId || Math.random()}
                 initial={{ scale: 0, y: 20 }}
                 animate={{ scale: 1, y: 0 }}
                 whileHover={isMyTurn ? { y: -12, scale: 1.08, zIndex: 30 } : {}}
@@ -76,15 +80,8 @@ export default function PlayerHand() {
                   padding: '14px 12px',
                   background: `linear-gradient(145deg, ${card.color || '#8b5cf6'} 0%, #090d16 100%)`,
                   border: '2px solid rgba(255, 255, 255, 0.3)',
-                  boxShadow: `0 12px 25px rgba(0,0,0,0.7), 0 0 20px ${card.color}40`,
+                  boxShadow: `0 12px 25px rgba(0,0,0,0.7), 0 0 20px ${card.color || '#8b5cf6'}40`,
                   cursor: isMyTurn ? 'pointer' : 'not-allowed',
-                  height: '180px',
-                  borderRadius: '18px',
-                  padding: '14px 12px',
-                  background: `linear-gradient(145deg, ${card.color || '#8b5cf6'} 0%, #090d16 100%)`,
-                  border: '2px solid rgba(255, 255, 255, 0.3)',
-                  boxShadow: `0 12px 25px rgba(0,0,0,0.7), 0 0 20px ${card.color}40`,
-                  cursor: 'pointer',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',
