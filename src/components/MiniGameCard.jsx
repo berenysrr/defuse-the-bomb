@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Keypad, Zap, Target, Lock } from 'lucide-react';
+import { Keyboard, Zap, Target, Lock } from 'lucide-react';
 import { sounds } from '../utils/audio';
 
 export default function MiniGameCard({ miniGame, onComplete }) {
