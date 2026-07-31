@@ -41,7 +41,7 @@ export default function Lobby() {
     }
   }, []);
 
-  // GERÇEK ZAMANLI KÜRESEL ODA DİNLEYİCİSİ (PEERJS & MULTIPLAYER SYNC)
+  // GERÇEK ZAMANLI KÜRESEL ODA DİNLEYİCİSİ (PUBSUB REAL-TIME SYNC)
   useEffect(() => {
     const unsubscribe = roomManager.subscribe((payload) => {
       if (!payload) return;
@@ -96,13 +96,13 @@ export default function Lobby() {
       name: myName.trim() !== '' ? myName : `Misafir Oyuncu`,
       avatar: myAvatar
     };
+    setIsHost(false);
     const roomState = roomManager.joinRoom(inputCode, joinerPlayer);
     setRoomCode(inputCode);
-    setIsHost(false);
     if (roomState && roomState.players) {
       setJoinedPlayers(roomState.players);
     } else {
-      setJoinedPlayers(prev => [...prev, joinerPlayer]);
+      setJoinedPlayers([joinerPlayer]);
     }
     setMode('ROOM_WAIT');
   };

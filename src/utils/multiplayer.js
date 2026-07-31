@@ -1,33 +1,16 @@
-import { Peer } from 'peerjs';
+// GÜVENİLİR KÜRESEL İNTERNET ODA SENKRONİZASYON MOTORU (NTFY.SH REAL-TIME PUBSUB)
 
-// KÜRESEL İNTERNET ODA SENKRONİZASYON MOTORU
 class RoomManager {
   constructor() {
     this.roomCode = null;
     this.isHost = false;
     this.listeners = [];
-    this.channel = null;
-    this.peer = null;
-    this.connections = [];
-    this.pollInterval = null;
-
-    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-      this.channel = new BroadcastChannel('defuse_bomb_rooms');
-      this.channel.onmessage = (event) => {
-        this.handleMessage(event.data);
-      };
-    }
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('storage', (event) => {
-        if (event.key && event.key.startsWith('room_state_')) {
-          try {
-            const data = JSON.parse(event.newValue);
-            this.handleMessage(data);
-          } catch (e) {}
-        }
-      });
-    }
+    this.eventSource = null;
+    this.roomState = {
+      code: null,
+      players: [],
+      gameState: 'LOBBY'
+    };
   }
 
   // 1. ODA OLUŞTUR (Host)
@@ -36,49 +19,18 @@ class RoomManager {
     this.roomCode = code;
     this.isHost = true;
 
-    const roomState = {
+    this.roomState = {
       code,
       hostId: hostPlayerConfig.id,
       players: [hostPlayerConfig],
-      gameState: 'LOBBY',
-      lastUpdate: Date.now()
+      gameState: 'LOBBY'
     };
 
-    // Google STUN Sunucusu İle PeerJS Bağlantısı
-    try {
-      const peerId = `defuse-bomb-${code}`;
-      this.peer = new Peer(peerId, {
-        config: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' }
-          ]
-        }
-      });
+    // Küresel Canlı PubSub Kanalına Abone Ol
+    this.subscribeToGlobalChannel(code);
 
-      this.peer.on('connection', (conn) => {
-        this.connections.push(conn);
-        conn.on('data', (data) => {
-          this.handleMessage(data);
-        });
-        conn.on('open', () => {
-          const state = this.getRoomState(code) || roomState;
-          conn.send({ type: 'STATE_UPDATE', roomCode: code, state });
-        });
-      });
-    } catch (e) {
-      console.warn('PeerJS init:', e);
-    }
-
-    const payload = {
-      type: 'STATE_UPDATE',
-      roomCode: code,
-      state: roomState,
-      lastUpdate: Date.now()
-    };
-
-    this.saveAndBroadcast(payload);
-    this.startCloudPolling(code);
+    // Oda Kuruldu Yayın Yap
+    this.broadcastStateToCloud(this.roomState);
     return code;
   }
 
@@ -88,136 +40,112 @@ class RoomManager {
     this.roomCode = cleanCode;
     this.isHost = false;
 
-    // Mevcut Oda Verisini Al
-    let currentRoomState = this.getRoomState(cleanCode) || {
+    this.roomState = {
       code: cleanCode,
-      players: [],
-      gameState: 'LOBBY',
-      lastUpdate: Date.now()
+      players: [playerConfig],
+      gameState: 'LOBBY'
     };
 
-    const exists = currentRoomState.players.some(p => p.name === playerConfig.name || p.id === playerConfig.id);
-    if (!exists) {
-      currentRoomState.players.push(playerConfig);
-    }
+    // Küresel Canlı PubSub Kanalına Abone Ol
+    this.subscribeToGlobalChannel(cleanCode);
 
-    const payload = {
-      type: 'STATE_UPDATE',
+    // Host'a Katılma İsteği Gönder (JOIN_REQUEST)
+    const joinPayload = {
+      type: 'JOIN_REQUEST',
       roomCode: cleanCode,
-      state: currentRoomState,
-      lastUpdate: Date.now()
+      player: playerConfig
     };
+    this.publishToCloud(cleanCode, joinPayload);
 
-    this.saveAndBroadcast(payload);
-
-    // Host Peer'ına Bağlan
-    try {
-      const joinerPeerId = `defuse-joiner-${Date.now()}`;
-      this.peer = new Peer(joinerPeerId, {
-        config: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' }
-          ]
-        }
-      });
-
-      this.peer.on('open', () => {
-        const hostPeerId = `defuse-bomb-${cleanCode}`;
-        const conn = this.peer.connect(hostPeerId);
-        conn.on('open', () => {
-          conn.send({ type: 'JOIN_REQUEST', roomCode: cleanCode, player: playerConfig });
-        });
-        conn.on('data', (data) => {
-          this.handleMessage(data);
-        });
-      });
-    } catch (e) {
-      console.warn('PeerJS join:', e);
-    }
-
-    this.startCloudPolling(cleanCode);
-    return currentRoomState;
+    return this.roomState;
   }
 
-  // Oyunu Başlat Yayınlama (Host)
+  // 3. KÜRESEL PUBSUB KANALINA CANLI ABONE OL (NTFY.SH REAL-TIME SSE)
+  subscribeToGlobalChannel(code) {
+    if (this.eventSource) {
+      this.eventSource.close();
+    }
+
+    const channelUrl = `https://ntfy.sh/defuse_bomb_room_${code}/json`;
+    this.eventSource = new EventSource(channelUrl);
+
+    this.eventSource.onmessage = (event) => {
+      try {
+        const messageData = JSON.parse(event.data);
+        if (messageData && messageData.message) {
+          const payload = JSON.parse(messageData.message);
+          this.handleCloudPayload(payload);
+        }
+      } catch (e) {}
+    };
+  }
+
+  // Buluttan Gelen Mesajları İşle
+  handleCloudPayload(payload) {
+    if (!payload || payload.roomCode !== this.roomCode) return;
+
+    // A) Oda Kurucusu (Host) Yeni Katılan Oyuncuyu Kabul Eder
+    if (payload.type === 'JOIN_REQUEST' && payload.player && this.isHost) {
+      const exists = this.roomState.players.some(p => p.id === payload.player.id || p.name === payload.player.name);
+      if (!exists) {
+        this.roomState.players.push(payload.player);
+        this.broadcastStateToCloud(this.roomState);
+      }
+    }
+
+    // B) Katılımcılar Güncel Oda Durumunu Alır
+    if (payload.type === 'STATE_UPDATE' && payload.state) {
+      this.roomState = payload.state;
+      this.notifyListeners({
+        type: 'STATE_UPDATE',
+        roomCode: this.roomCode,
+        state: this.roomState
+      });
+    }
+
+    // C) Oyunu Başlat Bildirimi
+    if (payload.type === 'GAME_START') {
+      this.roomState.gameState = 'PLAYING';
+      if (payload.players) this.roomState.players = payload.players;
+      this.notifyListeners({
+        type: 'GAME_START',
+        roomCode: this.roomCode,
+        players: this.roomState.players
+      });
+    }
+  }
+
+  // Buluta Güncel Durumu Yayınla (Host)
+  broadcastStateToCloud(state) {
+    const payload = {
+      type: 'STATE_UPDATE',
+      roomCode: state.code,
+      state: state
+    };
+    this.publishToCloud(state.code, payload);
+  }
+
+  // Oyunu Başlat Yayınla (Host)
   startGameBroadcast(players) {
-    const currentState = this.getRoomState(this.roomCode) || { code: this.roomCode, players };
-    currentState.gameState = 'PLAYING';
-    currentState.players = players;
+    this.roomState.gameState = 'PLAYING';
+    this.roomState.players = players;
 
     const payload = {
       type: 'GAME_START',
       roomCode: this.roomCode,
-      state: currentState,
-      players: players,
-      lastUpdate: Date.now()
+      players: players
     };
-
-    this.saveAndBroadcast(payload);
-
-    this.connections.forEach(conn => {
-      if (conn.open) {
-        conn.send(payload);
-      }
-    });
+    this.publishToCloud(this.roomCode, payload);
   }
 
-  // KÜRESEL BULUT POLING MOTORU (HER İNTERNET AĞINDA %100 ÇALIŞIR)
-  startCloudPolling(code) {
-    if (this.pollInterval) clearInterval(this.pollInterval);
-
-    this.pollInterval = setInterval(() => {
-      const state = this.getRoomState(code);
-      if (state) {
-        this.notifyListeners({
-          type: 'STATE_UPDATE',
-          roomCode: code,
-          state: state
-        });
-      }
-    }, 1000);
-  }
-
-  getRoomState(code) {
-    if (typeof localStorage === 'undefined') return null;
+  // ntfy.sh Üzerinden Yayın Yap
+  publishToCloud(code, payload) {
     try {
-      const raw = localStorage.getItem(`room_state_${code}`);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        return parsed.state || parsed;
-      }
+      fetch(`https://ntfy.sh/defuse_bomb_room_${code}`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }).catch(e => console.warn('ntfy publish error:', e));
     } catch (e) {}
-    return null;
-  }
-
-  saveAndBroadcast(payload) {
-    if (typeof localStorage !== 'undefined' && payload.roomCode) {
-      localStorage.setItem(`room_state_${payload.roomCode}`, JSON.stringify(payload));
-    }
-    if (this.channel) {
-      this.channel.postMessage(payload);
-    }
-    this.notifyListeners(payload);
-  }
-
-  handleMessage(data) {
-    if (!data || data.roomCode !== this.roomCode) return;
-
-    if (data.type === 'JOIN_REQUEST' && data.player && this.isHost) {
-      const currentState = this.getRoomState(this.roomCode) || { code: this.roomCode, players: [] };
-      const exists = currentState.players.some(p => p.id === data.player.id || p.name === data.player.name);
-      if (!exists) {
-        currentState.players.push(data.player);
-        this.saveAndBroadcast({
-          type: 'STATE_UPDATE',
-          roomCode: this.roomCode,
-          state: currentState
-        });
-      }
-    }
-
-    this.notifyListeners(data);
   }
 
   subscribe(callback) {
