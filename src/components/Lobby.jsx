@@ -5,7 +5,7 @@ import { Bomb, Users, Play, HelpCircle, Copy, Check, Globe, Loader } from 'lucid
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Lobby() {
-  const { startGame } = useGame();
+  const { startGame, setMyPlayerId } = useGame();
   
   const [mode, setMode] = useState('LOCAL'); 
   const [playerCount, setPlayerCount] = useState(4);
@@ -87,6 +87,7 @@ export default function Lobby() {
       avatar: myAvatar,
       isHost: true
     };
+    setMyPlayerId(hostPlayer.id);
     const code = await roomManager.createRoom(hostPlayer);
     setRoomCode(code);
     setIsHost(true);
@@ -108,6 +109,7 @@ export default function Lobby() {
       avatar: myAvatar,
       isHost: false
     };
+    setMyPlayerId(joinerPlayer.id);
     setIsHost(false);
     const roomState = await roomManager.joinRoom(cleanCode, joinerPlayer);
     setRoomCode(cleanCode);

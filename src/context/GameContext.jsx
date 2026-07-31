@@ -15,31 +15,26 @@ export const AVATARS = [
 ];
 
 const QUESTION_BANK = [
-  { id: 1, question: "İçinde 'A' harfi bulunmayan şehir hangisidir?", options: ["İzmir", "Ankara", "Bursa", "Adana"], correct: 0 },
-  { id: 2, question: "Hangisi bir çizgi film karakteri DEĞİLDİR?", options: ["SüngerBob", "Pikachu", "Einstein", "Bugs Bunny"], correct: 2 },
-  { id: 3, question: "Türkiye'nin başkenti neresidir?", options: ["İstanbul", "Ankara", "İzmir", "Antalya"], correct: 1 },
-  { id: 4, question: "Hangisi bir asal sayı DEĞİLDİR?", options: ["2", "7", "9", "13"], correct: 2 },
-  { id: 5, question: "Güneş sistemindeki en büyük gezegen hangisidir?", options: ["Mars", "Jüpiter", "Satürn", "Venüs"], correct: 1 },
+  { id: 1, question: "Güneş sisteminde kendi etrafında TERSİNE (doğudan batıya) dönen gezegen hangisidir?", options: ["Venüs", "Mars", "Jüpiter", "Neptün"], correct: 0 },
+  { id: 2, question: "Osmanlı Devleti'nin yayınlanan İLK resmi gazetesi hangisidir?", options: ["Takvim-i Vekayi", "Ceride-i Havadis", "Tercüman-ı Ahval", "Tasvir-i Ekar"], correct: 0 },
+  { id: 3, question: "Dünyanın en derin noktası olan Mariana Çukuru hangi okyanustadır?", options: ["Pasifik (Büyük Okyanus)", "Atlas Okyanusu", "Hint Okyanusu", "Arktik Okyanusu"], correct: 0 },
+  { id: 4, question: "Yazılım dünyasında C++ dilinin geliştiricisi ve yaratıcısı kimdir?", options: ["Bjarne Stroustrup", "Dennis Ritchie", "Guido van Rossum", "James Gosling"], correct: 0 },
+  { id: 5, question: "Antik Dünyanın Yedi Harikası'ndan günümüze ayakta kalmayı başarmış TEK yapı hangisidir?", options: ["Keops Piramidi", "Babil'in Asma Bahçeleri", "İskenderiye Feneri", "Rodos Heykeli"], correct: 0 },
   { id: 6, isMiniGame: true, type: 'CODE_BREAKER' },
-  { id: 7, question: "Satrançta en güçlü taş hangisidir?", options: ["Kale", "Vezir", "At", "Şah"], correct: 1 },
-  { id: 8, question: "Hangisi tatlı bir meyvedir?", options: ["Elma", "Tuz", "Biber", "Soğan"], correct: 0 },
+  { id: 7, question: "Nobel Ödülleri'nden Barış Ödülü dışındaki tüm ödüller hangi ülkede verilmektedir?", options: ["İsveç", "Norveç", "İsviçre", "Almanya"], correct: 0 },
+  { id: 8, question: "İnsan vücudundaki en uzun ve en güçlü kemik hangisidir?", options: ["Uyluk Kemiği (Femur)", "Kaval Kemiği", "Omurga", "Pazu Kemiği"], correct: 0 },
   { id: 9, isMiniGame: true, type: 'REFLEX_TAP' },
-  { id: 10, question: "Suyun kimyasal formülü nedir?", options: ["CO2", "H2O", "NaCl", "O2"], correct: 1 },
-  { id: 11, question: "Kırmızı ile Sarının karışımından hangi renk elde edilir?", options: ["Yeşil", "Turuncu", "Mor", "Mavi"], correct: 1 },
-  { id: 12, question: "Dünyanın en yüksek dağı hangisidir?", options: ["Ağrı Dağı", "Everest", "Alpler", "Kafdağı"], correct: 1 },
-  { id: 13, question: "İstiklal Marşı'mızın şairi kimdir?", options: ["Ziya Gökalp", "Mehmet Akif Ersoy", "Namık Kemal", "Orhan Veli"], correct: 1 },
-  { id: 14, question: "Hangisi uçabilen tek memeli hayvandır?", options: ["Yasa Tobi", "Yasa Kuşu", "Yasa Balığı", "Yasa Yarasa"], correct: 3 },
-  { id: 15, question: "Hangi organımız vücuda kan pompalar?", options: ["Akciğer", "Kalp", "Karaciğer", "Böbrek"], correct: 1 },
-  { id: 16, question: "Türkiye'nin en uzun nehri hangisidir?", options: ["Kızılırmak", "Yeşilırmak", "Fırat", "Dicle"], correct: 0 },
-  { id: 17, question: "Fatih Sultan Mehmet kaç yılında İstanbul'u fethetti?", options: ["1071", "1299", "1453", "1923"], correct: 2 },
-  { id: 18, question: "Periyodik tabloda 'O' simgesi hangi elementi temsil eder?", options: ["Oksijen", "Altın", "Demir", "Gümüş"], correct: 0 },
-  { id: 19, question: "Futbolda bir takım sahada aynı anda kaç oyuncu ile yer alır?", options: ["9", "10", "11", "12"], correct: 2 },
-  { id: 20, question: "Hangisi kış mevsimi ayıdır?", options: ["Ocak", "Nisan", "Temmuz", "Ekim"], correct: 0 },
-  { id: 21, question: "Dünyanın en büyük okyanusu hangisidir?", options: ["Atlas Okyanusu", "Büyük Okyanus (Pasifik)", "Hint Okyanusu", "Arktik Okyanusu"], correct: 1 },
-  { id: 22, question: "Gökkuşağında kaç renk bulunur?", options: ["5", "6", "7", "8"], correct: 2 },
-  { id: 23, question: "Piramitleri ile ünlü ülke hangisidir?", options: ["Yunanistan", "Mısır", "İtalya", "Çin"], correct: 1 },
-  { id: 24, question: "Mona Lisa tablosu hangi ressama aittir?", options: ["Picasso", "Van Gogh", "Leonardo da Vinci", "Salvador Dali"], correct: 2 },
-  { id: 25, question: "Telefonu kim icat etmiştir?", options: ["Graham Bell", "Edison", "Tesla", "Newton"], correct: 0 }
+  { id: 10, question: "Optik kırıcılık birimi 'Diyoptri' matematiksel olarak neyin tersidir?", options: ["Odak Uzaklığı (Metre)", "Işık Şiddeti", "Dalga Boyu", "Frekans"], correct: 0 },
+  { id: 11, question: "Dünyanın yüzölçümü ve nüfus bakımından EN KÜÇÜK bağımsız ülkesi hangisidir?", options: ["Vatikan", "Monako", "Nauru", "San Marino"], correct: 0 },
+  { id: 12, question: "İç organlarımızdan hangisi kendi kendini yenileyebilme (rejenerasyon) yeteneğine sahiptir?", options: ["Karaciğer", "Böbrek", "Akciğer", "Pankreas"], correct: 0 },
+  { id: 13, question: "Elektriğin AC (Alternatif Akım) sistemini geliştiren mucit kimdir?", options: ["Nikola Tesla", "Thomas Edison", "Alexander Graham Bell", "Michael Faraday"], correct: 0 },
+  { id: 14, question: "Atom bombasının babası olarak bilinen Amerikalı fizikçi kimdir?", options: ["J. Robert Oppenheimer", "Albert Einstein", "Niels Bohr", "Enrico Fermi"], correct: 0 },
+  { id: 15, question: "Güneş ışığının Dünya'ya ulaşması yaklaşık ne kadar sürer?", options: ["8 Dakika 20 Saniye", "1 Saniye", "15 Dakika", "1 Saat"], correct: 0 },
+  { id: 16, question: "İstiklal Marşı'mız hangi tarihte TBMM tarafından kabul edilmiştir?", options: ["12 Mart 1921", "29 Ekim 1923", "19 Mayıs 1919", "23 Nisan 1920"], correct: 0 },
+  { id: 17, question: "Hangi element periyodik cetvelde 'Au' simgesi ile gösterilir?", options: ["Altın", "Gümüş", "Bakır", "Alüminyum"], correct: 0 },
+  { id: 18, question: "Dünyanın en yüksek şelalesi olan Angel Şelalesi hangi ülkededir?", options: ["Venezuela", "Brezilya", "Kanada", "ABD"], correct: 0 },
+  { id: 19, question: "Bilgisayar biliminde ilk programcı olarak kabul edilen kadın kimdir?", options: ["Ada Lovelace", "Grace Hopper", "Marie Curie", "Katherine Johnson"], correct: 0 },
+  { id: 20, question: "Satranç tahtasında toplam kaç siyah ve beyaz kare bulunur?", options: ["64", "32", "81", "100"], correct: 0 }
 ];
 
 const CARD_TYPES = [
@@ -56,10 +51,14 @@ const CARD_TYPES = [
 export function GameProvider({ children }) {
   const [gameState, setGameState] = useState('LOBBY');
   const [activeRoomCode, setActiveRoomCode] = useState(null);
+  const [myPlayerId, setMyPlayerId] = useState(null);
 
   const [turnIndex, setTurnIndex] = useState(0); 
   const [turnDirection, setTurnDirection] = useState(1); 
   const [timeLeft, setTimeLeft] = useState(60);
+
+  // Cihazın kendi sırası mı hesabı (Çoklu oyuncu odasında)
+  const isMyTurn = !activeRoomCode || (players[turnIndex] && String(players[turnIndex].id) === String(myPlayerId));
 
   const [lastPlayedCard, setLastPlayedCard] = useState(null);
   const [wireEffect, setWireEffect] = useState(null);
@@ -256,6 +255,11 @@ export function GameProvider({ children }) {
 
   const answerQuestion = (optionIndex) => {
     if (gameState !== 'PLAYING') return;
+    if (activeRoomCode && players[turnIndex] && String(players[turnIndex].id) !== String(myPlayerId)) {
+      sounds.playBuzzer();
+      addLog(`⚠️ SIRA SENDE DEĞİL! (${players[turnIndex]?.name} HAMLE YAPIYOR)`);
+      return;
+    }
 
     if (optionIndex === currentQuestion.correct) {
       sounds.playBeep(1200, 0.1);
@@ -270,6 +274,11 @@ export function GameProvider({ children }) {
   };
 
   const handleMiniGameResult = (isSuccess) => {
+    if (gameState !== 'PLAYING') return;
+    if (activeRoomCode && players[turnIndex] && String(players[turnIndex].id) !== String(myPlayerId)) {
+      return;
+    }
+
     if (isSuccess) {
       sounds.playBeep(1400, 0.15);
       const newPlayers = players.map((p, idx) => idx === turnIndex ? { ...p, score: p.score + 15 } : p);
@@ -370,6 +379,11 @@ export function GameProvider({ children }) {
 
   const playCard = (card, targetPlayer = null) => {
     if (gameState !== 'PLAYING') return;
+    if (activeRoomCode && players[turnIndex] && String(players[turnIndex].id) !== String(myPlayerId)) {
+      sounds.playBuzzer();
+      addLog(`⚠️ SIRA SENDE DEĞİL! (${players[turnIndex]?.name} HAMLE YAPIYOR)`);
+      return;
+    }
     sounds.playBeep(1000, 0.1);
 
     const targetName = targetPlayer ? targetPlayer.name : '';
@@ -479,6 +493,9 @@ export function GameProvider({ children }) {
         logs,
         lastPlayedCard,
         wireEffect,
+        myPlayerId,
+        setMyPlayerId,
+        isMyTurn,
         startGame,
         answerQuestion,
         handleMiniGameResult,

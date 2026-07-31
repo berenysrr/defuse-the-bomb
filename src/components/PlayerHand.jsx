@@ -17,7 +17,7 @@ const CARD_ICONS = {
 const TARGETED_CARDS = ['PASS', 'CUT_WIRE', 'STEAL'];
 
 export default function PlayerHand() {
-  const { players, turnIndex, playCard, gameState, lastPlayedCard } = useGame();
+  const { players, turnIndex, playCard, gameState, lastPlayedCard, isMyTurn } = useGame();
   const currentPlayer = players[turnIndex];
 
   if (gameState !== 'PLAYING' || !currentPlayer) return null;
@@ -26,14 +26,20 @@ export default function PlayerHand() {
     <div style={{ width: '100%', maxWidth: '750px', display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '16px', zIndex: 40, margin: '16px auto 0 auto' }}>
       
       {/* SİZİN OYUNCU KİMLİĞİNİZ VE ANİ ÖLÜM ROZETİ */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', background: 'rgba(15, 23, 42, 0.95)', padding: '10px 24px', borderRadius: '20px', border: '2px solid #ef4444', boxShadow: '0 0 30px rgba(239, 68, 68, 0.5)', marginBottom: '14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', background: 'rgba(15, 23, 42, 0.95)', padding: '10px 24px', borderRadius: '20px', border: `2px solid ${isMyTurn ? '#ef4444' : '#64748b'}`, boxShadow: isMyTurn ? '0 0 30px rgba(239, 68, 68, 0.5)' : 'none', marginBottom: '14px' }}>
         <span style={{ fontSize: '32px' }}>{currentPlayer.avatar?.icon}</span>
         <div>
           <div style={{ fontSize: '15px', fontWeight: '900', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span>{currentPlayer.name}</span>
-            <span style={{ color: '#ef4444', fontSize: '11px', background: 'rgba(239, 68, 68, 0.2)', padding: '2px 10px', borderRadius: '12px', fontWeight: '900' }}>
-              💥 ANİ ÖLÜM (1 YANLIŞ KABLO = ELENME!)
-            </span>
+            {isMyTurn ? (
+              <span style={{ color: '#ef4444', fontSize: '11px', background: 'rgba(239, 68, 68, 0.2)', padding: '2px 10px', borderRadius: '12px', fontWeight: '900' }}>
+                💥 SIRA SENDE! (HAMLE YAP)
+              </span>
+            ) : (
+              <span style={{ color: '#94a3b8', fontSize: '11px', background: 'rgba(148, 163, 184, 0.2)', padding: '2px 10px', borderRadius: '12px', fontWeight: '900' }}>
+                ⏳ SIRA RAKİPTE
+              </span>
+            )}
           </div>
         </div>
 
@@ -50,7 +56,7 @@ export default function PlayerHand() {
           Hiç aksiyon kartın kalmadı! Hızlı cevap vererek kart kazan! 🎁
         </p>
       ) : (
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '14px', width: '100%', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '14px', width: '100%', flexWrap: 'wrap', opacity: isMyTurn ? 1 : 0.5 }}>
           {currentPlayer.hand.map((card) => {
             const CardIcon = CARD_ICONS[card.id] || Sparkles;
 
@@ -59,12 +65,19 @@ export default function PlayerHand() {
                 key={card.uniqueId}
                 initial={{ scale: 0, y: 20 }}
                 animate={{ scale: 1, y: 0 }}
-                whileHover={{ y: -12, scale: 1.08, zIndex: 30 }}
-                whileTap={{ scale: 0.92 }}
-                onClick={() => playCard(card)}
+                whileHover={isMyTurn ? { y: -12, scale: 1.08, zIndex: 30 } : {}}
+                whileTap={isMyTurn ? { scale: 0.92 } : {}}
+                onClick={() => isMyTurn && playCard(card)}
                 className="action-card"
                 style={{
                   width: '145px',
+                  height: '180px',
+                  borderRadius: '18px',
+                  padding: '14px 12px',
+                  background: `linear-gradient(145deg, ${card.color || '#8b5cf6'} 0%, #090d16 100%)`,
+                  border: '2px solid rgba(255, 255, 255, 0.3)',
+                  boxShadow: `0 12px 25px rgba(0,0,0,0.7), 0 0 20px ${card.color}40`,
+                  cursor: isMyTurn ? 'pointer' : 'not-allowed',
                   height: '180px',
                   borderRadius: '18px',
                   padding: '14px 12px',
