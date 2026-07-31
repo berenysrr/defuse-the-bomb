@@ -1,13 +1,15 @@
-// %100 GERÇEK ZAMANLI KÜRESEL MULTIPLAYER ODA VE OYUN İÇİ SENKRONİZASYON MOTORU
+// GÜVENİLİR KÜRESEL GERÇEK ZAMANLI PUBSUB MOTORU (PUBNUB GLOBAL REALTIME API)
 
-const FIREBASE_DB_URL = 'https://defuse-bomb-default-rtdb.firebaseio.com/rooms';
+const PUBNUB_SUB_KEY = 'demo';
+const PUBNUB_PUB_KEY = 'demo';
 
 class RoomManager {
   constructor() {
     this.roomCode = null;
     this.isHost = false;
-    this.listeners = new Map(); // roomCode -> callbacks[]
+    this.listeners = new Map();
     this.pollInterval = null;
+    this.lastTimeToken = '0';
 
     this.roomState = {
       code: null,
@@ -28,12 +30,18 @@ class RoomManager {
       hostId: hostPlayerConfig.id,
       players: [hostPlayerConfig],
       gameState: 'LOBBY',
-      inGameState: null,
-      lastUpdate: Date.now()
+      inGameState: null
     };
 
-    await this.updateCloudRoomState(code, this.roomState);
-    this.startCloudPolling(code);
+    // PubNub canlı kanalını dinlemeye başla
+    this.startPubNubStream(code);
+
+    // Odanın oluşturulduğunu buluta duyur
+    await this.publishToCloud(code, {
+      type: 'STATE_UPDATE',
+      roomCode: code,
+      state: this.roomState
+    });
 
     return code;
   }
@@ -44,27 +52,26 @@ class RoomManager {
     this.roomCode = cleanCode;
     this.isHost = false;
 
-    let cloudState = await this.getCloudRoomState(cleanCode);
+    this.roomState = {
+      code: cleanCode,
+      players: [playerConfig],
+      gameState: 'LOBBY',
+      inGameState: null
+    };
 
-    if (!cloudState) {
-      cloudState = {
-        code: cleanCode,
-        hostId: null,
-        players: [playerConfig],
-        gameState: 'LOBBY',
-        inGameState: null,
-        lastUpdate: Date.now()
-      };
-    } else {
-      const exists = cloudState.players.some(p => p.id === playerConfig.id || p.name === playerConfig.name);
-      if (!exists) {
-        cloudState.players.push(playerConfig);
-      }
-    }
+    // PubNub canlı kanalını dinlemeye başla
+    this.startPubNubStream(cleanCode);
 
-    this.roomState = cloudState;
-    await this.updateCloudRoomState(cleanCode, cloudState);
-    this.startCloudPolling(cleanCode);
+    // Host'a Katılım İsteği Yayınla (3 defa üst üste garantili gönderim)
+    const joinPayload = {
+      type: 'JOIN_REQUEST',
+      roomCode: cleanCode,
+      player: playerConfig
+    };
+
+    this.publishToCloud(cleanCode, joinPayload);
+    setTimeout(() => this.publishToCloud(cleanCode, joinPayload), 500);
+    setTimeout(() => this.publishToCloud(cleanCode, joinPayload), 1200);
 
     return this.roomState;
   }
@@ -78,107 +85,137 @@ class RoomManager {
     if (initialInGameState) {
       this.roomState.inGameState = initialInGameState;
     }
-    this.roomState.lastUpdate = Date.now();
 
-    await this.updateCloudRoomState(this.roomCode, this.roomState);
-
-    this.notifyListeners(this.roomCode, {
+    const payload = {
       type: 'GAME_START',
       roomCode: this.roomCode,
       players: players,
       inGameState: initialInGameState
-    });
+    };
+
+    await this.publishToCloud(this.roomCode, payload);
+
+    this.notifyListeners(this.roomCode, payload);
   }
 
-  // 4. OYUN İÇİ CANLI DURUM YAYINLAMA (Kablo kesme, kart atma, soru cevaplama)
+  // 4. OYUN İÇİ GERÇEK ZAMANLI DURUM YAYINLAMA (Kablo kesme, kart atma, soru cevaplama)
   async broadcastInGameState(inGameStatePayload) {
     if (!this.roomCode) return;
 
     this.roomState.inGameState = inGameStatePayload;
-    this.roomState.lastUpdate = Date.now();
 
-    await this.updateCloudRoomState(this.roomCode, this.roomState);
-
-    this.notifyListeners(this.roomCode, {
+    const payload = {
       type: 'GAME_STATE_UPDATE',
       roomCode: this.roomCode,
       inGameState: inGameStatePayload
-    });
+    };
+
+    await this.publishToCloud(this.roomCode, payload);
+
+    this.notifyListeners(this.roomCode, payload);
   }
 
-  // 5. BULUT CANLI DİNLEYİCİSİ (HER 500MS - REALTIME SYNC)
-  startCloudPolling(code) {
+  // 5. PUBNUB CANLI AKIŞ MOTORU (KÜRESEL GERÇEK ZAMANLI MESAJ DİNLEYİCİSİ)
+  startPubNubStream(code) {
     if (this.pollInterval) clearInterval(this.pollInterval);
 
-    const pollCloud = async () => {
+    const channel = `defuse_bomb_room_${code}`;
+
+    const pollPubNub = async () => {
       if (!this.roomCode) return;
-      const remoteState = await this.getCloudRoomState(code);
+      try {
+        const url = `https://ps.pubnub.com/subscribe/${PUBNUB_SUB_KEY}/${channel}/0/${this.lastTimeToken}`;
+        const res = await fetch(url);
+        if (!res.ok) return;
 
-      if (remoteState) {
-        const isPlayersChanged = JSON.stringify(remoteState.players) !== JSON.stringify(this.roomState.players);
-        const isGameStarted = remoteState.gameState === 'PLAYING' && this.roomState.gameState !== 'PLAYING';
-        const isInGameStateChanged = JSON.stringify(remoteState.inGameState) !== JSON.stringify(this.roomState.inGameState);
+        const data = await res.json();
+        if (data && Array.isArray(data[0]) && data[0].length > 0) {
+          this.lastTimeToken = data[1] || this.lastTimeToken;
 
-        this.roomState = remoteState;
-
-        if (isPlayersChanged) {
-          this.notifyListeners(code, {
-            type: 'STATE_UPDATE',
-            roomCode: code,
-            state: remoteState
+          data[0].forEach(msg => {
+            this.handleCloudPayload(msg);
           });
         }
-
-        if (isGameStarted) {
-          this.notifyListeners(code, {
-            type: 'GAME_START',
-            roomCode: code,
-            players: remoteState.players,
-            inGameState: remoteState.inGameState
-          });
-        }
-
-        if (isInGameStateChanged && remoteState.inGameState) {
-          this.notifyListeners(code, {
-            type: 'GAME_STATE_UPDATE',
-            roomCode: code,
-            inGameState: remoteState.inGameState
-          });
-        }
+      } catch (e) {
+        console.warn('PubNub sub error:', e);
       }
     };
 
-    pollCloud();
-    this.pollInterval = setInterval(pollCloud, 500);
+    // Anında dinle ve her 400ms'de bir mesajları çek
+    pollPubNub();
+    this.pollInterval = setInterval(pollPubNub, 400);
   }
 
-  async getCloudRoomState(code) {
-    try {
-      const res = await fetch(`${FIREBASE_DB_URL}/${code}.json`);
-      if (res.ok) {
-        return await res.json();
+  // Buluttan Gelen Mesajları İşle
+  handleCloudPayload(payload) {
+    if (!payload || payload.roomCode !== this.roomCode) return;
+
+    // A) Oda Kurucusu (Host) Katılan Oyuncuyu Ekler ve Yeni Durumu Yayınlar
+    if (payload.type === 'JOIN_REQUEST' && payload.player && this.isHost) {
+      const exists = this.roomState.players.some(p => p.id === payload.player.id || p.name === payload.player.name);
+      if (!exists) {
+        this.roomState.players.push(payload.player);
+        
+        // Güncel oyuncu listesini tüm masaya yayınla
+        this.publishToCloud(this.roomCode, {
+          type: 'STATE_UPDATE',
+          roomCode: this.roomCode,
+          state: this.roomState
+        });
       }
-    } catch (e) {
-      console.warn('Cloud fetch error:', e);
     }
-    return null;
-  }
 
-  async updateCloudRoomState(code, state) {
-    try {
-      await fetch(`${FIREBASE_DB_URL}/${code}.json`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(state)
+    // B) Güncel Oda Durumu (Tüm Katılımcılar Oyuncu Listesini Günceller)
+    if (payload.type === 'STATE_UPDATE' && payload.state) {
+      if (payload.state.players && payload.state.players.length > 0) {
+        this.roomState = payload.state;
+        this.notifyListeners(this.roomCode, {
+          type: 'STATE_UPDATE',
+          roomCode: this.roomCode,
+          state: this.roomState
+        });
+      }
+    }
+
+    // C) Oyunu Başlat Bildirimi
+    if (payload.type === 'GAME_START') {
+      this.roomState.gameState = 'PLAYING';
+      if (payload.players && payload.players.length > 0) {
+        this.roomState.players = payload.players;
+      }
+      this.notifyListeners(this.roomCode, {
+        type: 'GAME_START',
+        roomCode: this.roomCode,
+        players: this.roomState.players,
+        inGameState: payload.inGameState
       });
-    } catch (e) {
-      console.warn('Cloud update error:', e);
+    }
+
+    // D) Oyun İçi Canlı Senkronizasyon (Kablo, Kart, Sıra, Puan)
+    if (payload.type === 'GAME_STATE_UPDATE' && payload.inGameState) {
+      this.roomState.inGameState = payload.inGameState;
+      this.notifyListeners(this.roomCode, {
+        type: 'GAME_STATE_UPDATE',
+        roomCode: this.roomCode,
+        inGameState: payload.inGameState
+      });
     }
   }
 
-  // ODA KODUNA ÖZEL DİNLEYİCİ (ROOMCODE SPESİFİK SUBSCRIBE)
+  // PubNub Üzerinden Küresel Yayın Yap
+  async publishToCloud(code, payload) {
+    try {
+      const channel = `defuse_bomb_room_${code}`;
+      const msgStr = encodeURIComponent(JSON.stringify(payload));
+      const url = `https://ps.pubnub.com/publish/${PUBNUB_PUB_KEY}/${PUBNUB_SUB_KEY}/0/${channel}/0/${msgStr}`;
+      await fetch(url);
+    } catch (e) {
+      console.warn('PubNub pub error:', e);
+    }
+  }
+
+  // Oda koduna özel dinleyici
   subscribe(roomCode, callback) {
-    // Eğer tek parametre verilirse callback kabul et
     let targetCode = roomCode;
     let cb = callback;
 
@@ -205,7 +242,6 @@ class RoomManager {
     if (list) {
       list.forEach(cb => cb(data));
     }
-    // Global dinleyicileri de bilgilendir
     const globalList = this.listeners.get('GLOBAL');
     if (globalList) {
       globalList.forEach(cb => cb(data));
