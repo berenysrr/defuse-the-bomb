@@ -14,15 +14,17 @@ class RoomManager {
       };
     }
 
-    // LocalStorage fallback for multi-tab/device sync
-    window.addEventListener('storage', (event) => {
-      if (event.key && event.key.startsWith('room_data_')) {
-        try {
-          const data = JSON.parse(event.newValue);
-          this.handleMessage(data);
-        } catch (e) {}
-      }
-    });
+    // LocalStorage ile sekmeler ve yerel cihazlar arası anlık dinleme
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', (event) => {
+        if (event.key && event.key.startsWith('room_state_')) {
+          try {
+            const data = JSON.parse(event.newValue);
+            this.handleMessage(data);
+          } catch (e) {}
+        }
+      });
+    }
   }
 
   // 1. ODA OLUŞTUR
@@ -39,39 +41,68 @@ class RoomManager {
       lastUpdate: Date.now()
     };
 
-    this.broadcastState(roomState);
+    const payload = {
+      type: 'STATE_UPDATE',
+      roomCode: code,
+      state: roomState,
+      lastUpdate: Date.now()
+    };
+
+    this.saveAndBroadcast(payload);
     return code;
   }
 
   // 2. ODAYA KATIL
   joinRoom(code, playerConfig) {
-    this.roomCode = code.toUpperCase();
+    const cleanCode = code.toUpperCase();
+    this.roomCode = cleanCode;
     this.isHost = false;
 
-    const payload = {
-      type: 'PLAYER_JOIN_REQUEST',
-      roomCode: this.roomCode,
-      player: playerConfig,
+    // Var olan oda verisini al
+    let roomState = this.getRoomState(cleanCode) || {
+      code: cleanCode,
+      players: [],
+      gameState: 'LOBBY',
       lastUpdate: Date.now()
     };
 
-    this.broadcastMessage(payload);
+    // Oyuncu daha önce eklenmediyse listeye ekle
+    const exists = roomState.players.some(p => p.name === playerConfig.name || p.id === playerConfig.id);
+    if (!exists) {
+      roomState.players.push(playerConfig);
+    }
+
+    const payload = {
+      type: 'STATE_UPDATE',
+      roomCode: cleanCode,
+      state: roomState,
+      lastUpdate: Date.now()
+    };
+
+    this.saveAndBroadcast(payload);
+    return roomState;
   }
 
-  // YAYIN YAP (BROADCAST)
-  broadcastState(state) {
-    const payload = { type: 'STATE_UPDATE', roomCode: state.code, state, lastUpdate: Date.now() };
-    this.broadcastMessage(payload);
+  getRoomState(code) {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem(`room_state_${code}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return parsed.state || parsed;
+      }
+    } catch (e) {}
+    return null;
   }
 
-  broadcastMessage(data) {
+  saveAndBroadcast(payload) {
+    if (typeof localStorage !== 'undefined' && payload.roomCode) {
+      localStorage.setItem(`room_state_${payload.roomCode}`, JSON.stringify(payload));
+    }
     if (this.channel) {
-      this.channel.postMessage(data);
+      this.channel.postMessage(payload);
     }
-    if (typeof localStorage !== 'undefined' && data.roomCode) {
-      localStorage.setItem(`room_data_${data.roomCode}`, JSON.stringify(data));
-    }
-    this.notifyListeners(data);
+    this.notifyListeners(payload);
   }
 
   handleMessage(data) {

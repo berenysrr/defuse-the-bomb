@@ -1,33 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { useGame, AVATARS } from '../context/GameContext';
 import { roomManager } from '../utils/multiplayer';
-import { Bomb, Users, Play, HelpCircle, Copy, Check, QrCode, Globe } from 'lucide-react';
+import { Bomb, Users, Play, HelpCircle, Copy, Check, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Lobby() {
   const { startGame } = useGame();
   
-  // Mod Seçenekleri: 'LOCAL' (1 Cihazda) veya 'ONLINE' (Oda Kodu ile Telefondan)
   const [mode, setMode] = useState('LOCAL'); 
   const [playerCount, setPlayerCount] = useState(4);
   const [showGuide, setShowGuide] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // Oda Durumları
   const [roomCode, setRoomCode] = useState('');
   const [inputCode, setInputCode] = useState('');
   const [joinedPlayers, setJoinedPlayers] = useState([]);
   
-  // Tekil Oyuncu Girişi (Telefondan Katılanlar İçin)
+  // Oyuncu Profil Bilgileri
   const [myName, setMyName] = useState('');
   const [myAvatar, setMyAvatar] = useState(AVATARS[0]);
 
   // Yerel Oyuncu Yapılandırması (1 Cihazda Oynayanlar İçin)
   const [localConfigs, setLocalConfigs] = useState([
-    { id: 0, name: '', avatar: AVATARS[0] },
-    { id: 1, name: '', avatar: AVATARS[1] },
-    { id: 2, name: '', avatar: AVATARS[2] },
-    { id: 3, name: '', avatar: AVATARS[3] }
+    { id: 0, name: 'Çılgın Maymun', avatar: AVATARS[0] },
+    { id: 1, name: 'Cyber Robot', avatar: AVATARS[1] },
+    { id: 2, name: 'Ninja Kedi', avatar: AVATARS[2] },
+    { id: 3, name: 'Hacker Tilki', avatar: AVATARS[3] }
   ]);
 
   // URL'de oda kodu var mı kontrol et (?room=XXXX)
@@ -40,12 +40,26 @@ export default function Lobby() {
     }
   }, []);
 
+  // GERÇEK ZAMANLI ODA CANLI DİNLEYİCİSİ (MULTİPLAYER REAL-TIME SYNC)
+  useEffect(() => {
+    const unsubscribe = roomManager.subscribe((payload) => {
+      if (payload && payload.type === 'STATE_UPDATE' && payload.state) {
+        if (payload.state.players && payload.state.players.length > 0) {
+          setJoinedPlayers(payload.state.players);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [roomCode]);
+
   // 1 Cihazda oyuncu sayısı değiştiğinde
   const handleCountChange = (count) => {
     setPlayerCount(count);
+    const defaultNames = ['Çılgın Maymun', 'Cyber Robot', 'Ninja Kedi', 'Hacker Tilki', 'Uzaylı Alien', 'Gamer Ayı'];
     const updated = Array.from({ length: count }).map((_, idx) => ({
       id: idx,
-      name: localConfigs[idx]?.name || '',
+      name: localConfigs[idx]?.name || defaultNames[idx % defaultNames.length],
       avatar: localConfigs[idx]?.avatar || AVATARS[idx % AVATARS.length]
     }));
     setLocalConfigs(updated);
@@ -54,7 +68,7 @@ export default function Lobby() {
   // ODA OLUŞTUR (Host)
   const handleCreateRoom = () => {
     const hostPlayer = {
-      id: 0,
+      id: Date.now(),
       name: myName.trim() !== '' ? myName : 'Oda Kurucu',
       avatar: myAvatar
     };
@@ -69,21 +83,32 @@ export default function Lobby() {
     if (!inputCode) return;
     const joinerPlayer = {
       id: Date.now(),
-      name: myName.trim() !== '' ? myName : `Oyuncu`,
+      name: myName.trim() !== '' ? myName : `Misafir Oyuncu`,
       avatar: myAvatar
     };
-    roomManager.joinRoom(inputCode, joinerPlayer);
+    const roomState = roomManager.joinRoom(inputCode, joinerPlayer);
     setRoomCode(inputCode);
-    setJoinedPlayers(prev => [...prev, joinerPlayer]);
+    if (roomState && roomState.players) {
+      setJoinedPlayers(roomState.players);
+    } else {
+      setJoinedPlayers(prev => [...prev, joinerPlayer]);
+    }
     setMode('ROOM_WAIT');
   };
 
-  // Oda Linkini Kopyala
-  const copyRoomLink = () => {
+  // 1. Sadece Oda Kodunu Kopyala (ör: BOMB1)
+  const copyOnlyCode = () => {
+    navigator.clipboard.writeText(roomCode);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
+
+  // 2. Tam Davet Linkini Kopyala (ör: http://...?room=BOMB1)
+  const copyFullLink = () => {
     const link = `${window.location.origin}/?room=${roomCode}`;
     navigator.clipboard.writeText(link);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
   };
 
   const handleStartGame = () => {
@@ -295,25 +320,66 @@ export default function Lobby() {
       {mode === 'ROOM_WAIT' && (
         <div className="glass-panel" style={{ padding: '24px', borderRadius: '18px', background: '#0f172a', border: '2px solid #f59e0b', textAlign: 'center', marginBottom: '24px' }}>
           <h3 style={{ margin: 0, color: '#f59e0b', fontSize: '20px' }}>ODA KODUNUZ:</h3>
-          <div style={{ fontSize: '36px', fontWeight: '900', color: '#fde047', letterSpacing: '4px', margin: '10px 0' }}>
+          <div style={{ fontSize: '42px', fontWeight: '900', color: '#fde047', letterSpacing: '6px', margin: '10px 0', textShadow: '0 0 20px rgba(253, 224, 71, 0.6)' }}>
             {roomCode}
           </div>
 
-          <button onClick={copyRoomLink} style={{ padding: '8px 16px', borderRadius: '10px', background: '#1e293b', border: '1px solid #f59e0b', color: '#fde047', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', marginBottom: '20px' }}>
-            {copied ? <Check size={16} /> : <Copy size={16} />} {copied ? 'Link Kopyalandı!' : 'Oda Linkini Kopyala'}
-          </button>
+          {/* 2 AYRI KOPYALAMA BUTONU */}
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '24px', flexWrap: 'wrap' }}>
+            {/* 1. Sadece Oda Kodunu Kopyala */}
+            <button
+              onClick={copyOnlyCode}
+              style={{
+                padding: '10px 18px',
+                borderRadius: '10px',
+                background: '#1e293b',
+                border: '1.5px solid #f59e0b',
+                color: '#fde047',
+                fontWeight: 'bold',
+                fontSize: '13px',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              {copiedCode ? <Check size={16} color="#22c55e" /> : <Copy size={16} />}
+              {copiedCode ? 'KOD KOPYALANDI!' : '📋 SADECE ODA KODUNU KOPYALA'}
+            </button>
 
-          <h4 style={{ color: '#cbd5e1', fontSize: '14px', margin: '0 0 12px 0' }}>Odadaki Oyuncular ({joinedPlayers.length}):</h4>
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '24px' }}>
-            {joinedPlayers.map(p => (
-              <div key={p.id} style={{ background: '#1e293b', padding: '8px 16px', borderRadius: '12px', border: '1px solid #334155', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>{p.avatar?.icon}</span>
-                <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#fff' }}>{p.name}</span>
+            {/* 2. Davet Linkini Kopyala */}
+            <button
+              onClick={copyFullLink}
+              style={{
+                padding: '10px 18px',
+                borderRadius: '10px',
+                background: '#1e293b',
+                border: '1.5px solid #06b6d4',
+                color: '#67e8f9',
+                fontWeight: 'bold',
+                fontSize: '13px',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              {copiedLink ? <Check size={16} color="#22c55e" /> : <Globe size={16} />}
+              {copiedLink ? 'LİNK KOPYALANDI!' : '🔗 DAVET LİNKİNİ KOPYALA'}
+            </button>
+          </div>
+
+          <h4 style={{ color: '#cbd5e1', fontSize: '15px', margin: '0 0 14px 0' }}>Odadaki Oyuncular ({joinedPlayers.length}):</h4>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '26px' }}>
+            {joinedPlayers.map((p, idx) => (
+              <div key={p.id || idx} style={{ background: '#1e293b', padding: '10px 20px', borderRadius: '14px', border: '1.5px solid #334155', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
+                <span style={{ fontSize: '26px' }}>{p.avatar?.icon}</span>
+                <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#fff' }}>{p.name}</span>
               </div>
             ))}
           </div>
 
-          <button onClick={handleStartGame} style={{ width: '100%', padding: '16px', background: 'linear-gradient(135deg, #ef4444, #b91c1c)', color: '#fff', fontWeight: 'bold', fontSize: '18px', border: 'none', borderRadius: '12px', cursor: 'pointer', boxShadow: '0 10px 25px rgba(239, 68, 68, 0.5)' }}>
+          <button onClick={handleStartGame} style={{ width: '100%', padding: '16px', background: 'linear-gradient(135deg, #ef4444, #b91c1c)', color: '#fff', fontWeight: 'bold', fontSize: '18px', border: 'none', borderRadius: '14px', cursor: 'pointer', boxShadow: '0 10px 25px rgba(239, 68, 68, 0.5)' }}>
             🎮 OYUNU BAŞLAT!
           </button>
         </div>
