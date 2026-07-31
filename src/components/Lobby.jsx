@@ -82,9 +82,10 @@ export default function Lobby() {
     if (e) e.preventDefault();
     setIsJoining(true);
     const hostPlayer = {
-      id: Date.now(),
+      id: 'host_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
       name: myName.trim() !== '' ? myName.trim() : 'Oda Kurucu',
-      avatar: myAvatar
+      avatar: myAvatar,
+      isHost: true
     };
     const code = await roomManager.createRoom(hostPlayer);
     setRoomCode(code);
@@ -102,14 +103,15 @@ export default function Lobby() {
 
     setIsJoining(true);
     const joinerPlayer = {
-      id: Date.now(),
+      id: 'player_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
       name: myName.trim() !== '' ? myName.trim() : `Misafir Oyuncu`,
-      avatar: myAvatar
+      avatar: myAvatar,
+      isHost: false
     };
     setIsHost(false);
     const roomState = await roomManager.joinRoom(cleanCode, joinerPlayer);
     setRoomCode(cleanCode);
-    if (roomState && roomState.players) {
+    if (roomState && roomState.players && roomState.players.some(p => p.isHost)) {
       setJoinedPlayers(roomState.players);
     } else {
       setJoinedPlayers([joinerPlayer]);
@@ -401,7 +403,7 @@ export default function Lobby() {
               <div key={p.id || idx} style={{ background: '#1e293b', padding: '10px 20px', borderRadius: '14px', border: '1.5px solid #334155', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
                 <span style={{ fontSize: '26px' }}>{p.avatar?.icon}</span>
                 <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#fff' }}>{p.name}</span>
-                {idx === 0 && <span style={{ fontSize: '10px', background: '#f59e0b', color: '#000', padding: '2px 6px', borderRadius: '6px', fontWeight: 'bold' }}>HOST</span>}
+                {p.isHost && <span style={{ fontSize: '10px', background: '#f59e0b', color: '#000', padding: '2px 6px', borderRadius: '6px', fontWeight: 'bold' }}>HOST</span>}
               </div>
             ))}
           </div>
@@ -413,7 +415,11 @@ export default function Lobby() {
           ) : (
             <div style={{ padding: '16px', borderRadius: '14px', background: 'rgba(6, 182, 212, 0.15)', border: '1.5px solid #06b6d4', color: '#67e8f9', fontWeight: 'bold', fontSize: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
               <Loader size={20} className="spin" />
-              <span>⏳ ODA KURUCUSUNUN (HOST) OYUNU BAŞLATMASI BEKLENİYOR...</span>
+              <span>
+                {joinedPlayers.some(p => p.isHost)
+                  ? '⏳ ODA KURUCUSUNUN (HOST) OYUNU BAŞLATMASI BEKLENİYOR...'
+                  : '🔄 ODA KURUCUSUNA BAĞLANILIYOR...'}
+              </span>
             </div>
           )}
         </div>
