@@ -3,7 +3,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Keyboard, Zap, Target, Lock } from 'lucide-react';
 import { sounds } from '../utils/audio';
 
+import { useGame } from '../context/GameContext';
+
 export default function MiniGameCard({ miniGame, onComplete }) {
+  const { isMyTurn, players, turnIndex } = useGame();
+  const currentTurnPlayer = players[turnIndex];
+
   // Mini Oyun Tip 1: Şifre Çözme
   const [targetCode, setTargetCode] = useState([7, 4, 2]);
   const [inputCode, setInputCode] = useState([]);
@@ -32,6 +37,7 @@ export default function MiniGameCard({ miniGame, onComplete }) {
   }, [miniGame]);
 
   const handleKeypadPress = (num) => {
+    if (!isMyTurn) return;
     sounds.playBeep(800, 0.05);
     const newCode = [...inputCode, num];
     setInputCode(newCode);
@@ -46,6 +52,7 @@ export default function MiniGameCard({ miniGame, onComplete }) {
   };
 
   const handleReflexTap = () => {
+    if (!isMyTurn) return;
     if (isGreen && !tappedSuccess) {
       setTappedSuccess(true);
       onComplete(true);
