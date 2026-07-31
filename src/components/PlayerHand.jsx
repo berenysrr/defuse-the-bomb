@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useGame } from '../context/GameContext';
-import TargetPlayerModal from './TargetPlayerModal';
 import { Shield, Sparkles, Zap, RotateCcw, Shuffle, Scissors, Hourglass, RefreshCw, Hand } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -15,104 +14,25 @@ const CARD_ICONS = {
   'STEAL': Hand
 };
 
-// Rakip Seçimi Gerektiren Kartlar
 const TARGETED_CARDS = ['PASS', 'CUT_WIRE', 'STEAL'];
 
 export default function PlayerHand() {
   const { players, turnIndex, playCard, gameState, lastPlayedCard } = useGame();
   const currentPlayer = players[turnIndex];
 
-  // Hedef Seçim Modal State'i
-  const [selectedCardForTarget, setSelectedCardForTarget] = useState(null);
-
   if (gameState !== 'PLAYING' || !currentPlayer) return null;
-
-  // Diğer Canlı Rakipler Listesi
-  const opponents = players.filter((p, idx) => idx !== turnIndex && p.lives > 0);
-
-  const handleCardClick = (card) => {
-    // Eğer kart rakip seçimi gerektiriyorsa modalı aç
-    if (TARGETED_CARDS.includes(card.id) && opponents.length > 0) {
-      setSelectedCardForTarget(card);
-    } else {
-      playCard(card);
-    }
-  };
-
-  const handleSelectTarget = (targetPlayer) => {
-    if (selectedCardForTarget) {
-      playCard(selectedCardForTarget, targetPlayer);
-      setSelectedCardForTarget(null);
-    }
-  };
 
   return (
     <div style={{ width: '100%', maxWidth: '750px', display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '16px', zIndex: 40, margin: '16px auto 0 auto' }}>
       
-      {/* 🎯 HEDEF RAKİP SEÇİM MODALI */}
-      <TargetPlayerModal
-        isVisible={!!selectedCardForTarget}
-        card={selectedCardForTarget}
-        opponents={opponents}
-        onSelectTarget={handleSelectTarget}
-        onClose={() => setSelectedCardForTarget(null)}
-      />
-
-      {/* 🃏 ATILAN KARTIN FIRLAMA ANİMASYONU */}
-      <AnimatePresence>
-        {lastPlayedCard && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.3, y: 40, rotate: -15 }}
-            animate={{ opacity: 1, scale: 1.3, y: -170, rotate: 0 }}
-            exit={{ opacity: 0, scale: 0.4, y: -260 }}
-            transition={{ type: 'spring', stiffness: 350, damping: 18 }}
-            style={{
-              position: 'absolute',
-              width: '150px',
-              height: '190px',
-              borderRadius: '20px',
-              padding: '16px',
-              background: `linear-gradient(135deg, ${lastPlayedCard.color || '#ef4444'}, #0f172a)`,
-              border: '3px solid #fde047',
-              boxShadow: '0 0 60px rgba(253, 224, 71, 0.9)',
-              color: '#ffffff',
-              textAlign: 'center',
-              zIndex: 100,
-              pointerEvents: 'none',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between'
-            }}
-          >
-            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#fef08a', textTransform: 'uppercase', letterSpacing: '1px' }}>
-              {lastPlayedCard.player} OYNADI:
-            </div>
-            <div style={{ fontSize: '16px', fontWeight: '900' }}>
-              {lastPlayedCard.name}
-            </div>
-            <div style={{ fontSize: '11px', color: '#cbd5e1' }}>
-              {lastPlayedCard.desc}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* SİZİN OYUNCU KİMLİĞİNİZ VE CANINIZ */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', background: 'rgba(15, 23, 42, 0.95)', padding: '10px 24px', borderRadius: '20px', border: '2px solid #f59e0b', boxShadow: '0 0 30px rgba(245, 158, 11, 0.4)', marginBottom: '14px' }}>
+      {/* SİZİN OYUNCU KİMLİĞİNİZ VE ANİ ÖLÜM ROZETİ */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', background: 'rgba(15, 23, 42, 0.95)', padding: '10px 24px', borderRadius: '20px', border: '2px solid #ef4444', boxShadow: '0 0 30px rgba(239, 68, 68, 0.5)', marginBottom: '14px' }}>
         <span style={{ fontSize: '32px' }}>{currentPlayer.avatar?.icon}</span>
         <div>
           <div style={{ fontSize: '15px', fontWeight: '900', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span>{currentPlayer.name}</span>
-            <span style={{ color: '#f59e0b', fontSize: '12px', background: 'rgba(245, 158, 11, 0.2)', padding: '2px 10px', borderRadius: '12px' }}>SİZİN KARTLARINIZ</span>
-          </div>
-          <div style={{ fontSize: '15px', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
-            {Array.from({ length: 3 }).map((_, i) => (
-              <span key={i} style={{ opacity: i < currentPlayer.lives ? 1 : 0.2, filter: i < currentPlayer.lives ? 'drop-shadow(0 0 6px #ef4444)' : 'none' }}>
-                ❤️
-              </span>
-            ))}
-            <span style={{ fontSize: '12px', fontWeight: '800', color: '#ef4444', marginLeft: '6px' }}>
-              ({currentPlayer.lives}/3 CAN)
+            <span style={{ color: '#ef4444', fontSize: '11px', background: 'rgba(239, 68, 68, 0.2)', padding: '2px 10px', borderRadius: '12px', fontWeight: '900' }}>
+              💥 ANİ ÖLÜM (1 YANLIŞ KABLO = ELENME!)
             </span>
           </div>
         </div>
@@ -141,7 +61,7 @@ export default function PlayerHand() {
                 animate={{ scale: 1, y: 0 }}
                 whileHover={{ y: -12, scale: 1.08, zIndex: 30 }}
                 whileTap={{ scale: 0.92 }}
-                onClick={() => handleCardClick(card)}
+                onClick={() => playCard(card)}
                 className="action-card"
                 style={{
                   width: '145px',
@@ -173,7 +93,7 @@ export default function PlayerHand() {
                 </div>
 
                 <div style={{ fontSize: '10px', color: '#fde047', fontWeight: '900', background: 'rgba(0,0,0,0.7)', padding: '4px', borderRadius: '6px', letterSpacing: '0.5px' }}>
-                  {TARGETED_CARDS.includes(card.id) ? '🎯 RAKİP SEÇ & FIRLAT' : 'MASAYA FIRLAT'}
+                  MASAYA FIRLAT
                 </div>
               </motion.div>
             );

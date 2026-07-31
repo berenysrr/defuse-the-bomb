@@ -62,10 +62,10 @@ export function GameProvider({ children }) {
   const [wireEffect, setWireEffect] = useState(null);
 
   const [players, setPlayers] = useState([
-    { id: 0, name: 'Çılgın Maymun', avatar: AVATARS[0], lives: 3, score: 0, hand: [], hasShield: false, isBot: false },
-    { id: 1, name: 'Cyber Robot', avatar: AVATARS[1], lives: 3, score: 0, hand: [], hasShield: false, isBot: false },
-    { id: 2, name: 'Ninja Kedi', avatar: AVATARS[2], lives: 3, score: 0, hand: [], hasShield: false, isBot: false },
-    { id: 3, name: 'Hacker Tilki', avatar: AVATARS[3], lives: 3, score: 0, hand: [], hasShield: false, isBot: false }
+    { id: 0, name: 'Çılgın Maymun', avatar: AVATARS[0], lives: 1, score: 0, hand: [], hasShield: false },
+    { id: 1, name: 'Cyber Robot', avatar: AVATARS[1], lives: 1, score: 0, hand: [], hasShield: false },
+    { id: 2, name: 'Ninja Kedi', avatar: AVATARS[2], lives: 1, score: 0, hand: [], hasShield: false },
+    { id: 3, name: 'Hacker Tilki', avatar: AVATARS[3], lives: 1, score: 0, hand: [], hasShield: false }
   ]);
 
   const [wires, setWires] = useState([
@@ -111,17 +111,16 @@ export function GameProvider({ children }) {
         id: idx,
         name: config.name?.trim() !== '' ? config.name : defaultNames[idx % defaultNames.length],
         avatar: config.avatar || AVATARS[idx % AVATARS.length],
-        lives: 3,
+        lives: 1, // ANİ ÖLÜM (SUDDEN DEATH ROULETTE): 1 YANLIŞ KABLO = ANINDA PATLAMA VE ELENME!
         score: 0,
         hand: [card1, card2],
-        hasShield: false,
-        isBot: false // Botlar Tamamen Kaldırıldı!
+        hasShield: false
       };
     });
 
     setPlayers(newPlayers);
     pickNewQuestion();
-    addLog(`💣 Oyun Başladı! Ortak Süre: 60 Saniye!`);
+    addLog(`💥 ANİ ÖLÜM RULETİ BAŞLADI! Yanlış kabloyu kesen anında patlar!`);
   };
 
   const resetWires = () => {
@@ -165,7 +164,7 @@ export function GameProvider({ children }) {
         });
       }, 1000);
     }
-    return () => clearInterval(timerId);
+    return () => clearTimeout(timerId);
   }, [gameState, timeLeft]);
 
   const handleTimeOut = () => {
@@ -243,6 +242,7 @@ export function GameProvider({ children }) {
         setTimeLeft(60);
         passTurn();
       } else {
+        // ANİ ÖLÜM PATLAMASI!
         triggerExplosionForPlayer(victimIdx);
       }
     } else {
@@ -252,19 +252,21 @@ export function GameProvider({ children }) {
     }
   };
 
+  // ANİ ÖLÜM (SUDDEN DEATH) PATLAMA VE ELENME MANTIĞI
   const triggerExplosionForPlayer = (playerIdx) => {
     sounds.playExplosion();
     const victim = players[playerIdx];
-    addLog(`💥 GÜMM! Bomba ${victim.name}'in elinde patladı!`);
+    addLog(`💥 ANİ ÖLÜM! Bomba patladı ve ${victim.name} ELENDİ!`);
 
-    const updatedPlayers = players.map((p, idx) => idx === playerIdx ? { ...p, lives: p.lives - 1 } : p);
+    // Oyuncunun canı direkt 0 olur ve elenir
+    const updatedPlayers = players.map((p, idx) => idx === playerIdx ? { ...p, lives: 0 } : p);
     setPlayers(updatedPlayers);
 
     const alivePlayers = updatedPlayers.filter(p => p.lives > 0);
     if (alivePlayers.length === 1) {
       setGameState('GAME_OVER');
       confetti({ particleCount: 150, spread: 80 });
-      addLog(`🏆 ŞAMPİYON: ${alivePlayers[0].name}! 🎉`);
+      addLog(`🏆 ŞAMPİYON: ${alivePlayers[0].name}! HAYATTA KALAN TEK KİŞİ O OLDU! 🎉`);
     } else {
       resetWires();
       setTimeLeft(60);
