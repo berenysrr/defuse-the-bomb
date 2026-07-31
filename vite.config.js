@@ -9,6 +9,15 @@ export default defineConfig({
     global: 'window',
     'process.env': {}
   },
+  build: {
+    rollupOptions: {
+      output: {
+        entryFileNames: `assets/[name]-v${Date.now()}.js`,
+        chunkFileNames: `assets/[name]-v${Date.now()}.js`,
+        assetFileNames: `assets/[name]-v${Date.now()}[extname]`
+      }
+    }
+  },
   server: {
     host: true,
     port: 3000
