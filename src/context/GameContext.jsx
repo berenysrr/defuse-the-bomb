@@ -50,10 +50,10 @@ export function GameProvider({ children }) {
   const [doubleWireCutNext, setDoubleWireCutNext] = useState(false);
 
   const [players, setPlayers] = useState([
-    { id: 0, name: 'Çılgın Maymun', avatar: AVATARS[0], lives: 3, hand: [], hasShield: false },
-    { id: 1, name: 'Cyber Robot', avatar: AVATARS[1], lives: 3, hand: [], hasShield: false },
-    { id: 2, name: 'Ninja Kedi', avatar: AVATARS[2], lives: 3, hand: [], hasShield: false },
-    { id: 3, name: 'Hacker Tilki', avatar: AVATARS[3], lives: 3, hand: [], hasShield: false }
+    { id: 0, name: 'Çılgın Maymun', avatar: AVATARS[0], lives: 3, hand: [], hasShield: false, isBot: false },
+    { id: 1, name: 'Cyber Robot 🤖', avatar: AVATARS[1], lives: 3, hand: [], hasShield: false, isBot: true },
+    { id: 2, name: 'Ninja Kedi 🐱', avatar: AVATARS[2], lives: 3, hand: [], hasShield: false, isBot: true },
+    { id: 3, name: 'Hacker Tilki 🦊', avatar: AVATARS[3], lives: 3, hand: [], hasShield: false, isBot: true }
   ]);
 
   const [wires, setWires] = useState([
@@ -93,7 +93,7 @@ export function GameProvider({ children }) {
 
     resetWires();
 
-    const defaultNames = ['Çılgın Maymun', 'Cyber Robot', 'Ninja Kedi', 'Hacker Tilki', 'Uzaylı Alien', 'Gamer Ayı'];
+    const defaultNames = ['Çılgın Maymun', 'Cyber Robot 🤖', 'Ninja Kedi 🐱', 'Hacker Tilki 🦊', 'Uzaylı Alien 👽', 'Gamer Ayı 🐻'];
 
     const newPlayers = customPlayerConfigs.map((config, idx) => {
       const card1 = getRandomCard([]);
@@ -104,7 +104,8 @@ export function GameProvider({ children }) {
         avatar: config.avatar || AVATARS[idx % AVATARS.length],
         lives: 3,
         hand: [card1, card2],
-        hasShield: false
+        hasShield: false,
+        isBot: idx !== 0 // 1. Oyuncu İnsan, Diğerleri Akıllı Bot!
       };
     });
 
@@ -139,6 +140,36 @@ export function GameProvider({ children }) {
   const addLog = (msg) => {
     setLogs(prev => [msg, ...prev.slice(0, 3)]);
   };
+
+  // BOT OYUNCU OTOMATİK HAMLE ENGINE (AI BOT PLAYER)
+  useEffect(() => {
+    let botTimer;
+    if (gameState === 'PLAYING' && players[turnIndex]?.isBot && !showChaosWheel) {
+      botTimer = setTimeout(() => {
+        const bot = players[turnIndex];
+        const aliveRivals = players.filter((p, idx) => idx !== turnIndex && p.lives > 0);
+        const randomTarget = aliveRivals[Math.floor(Math.random() * aliveRivals.length)];
+
+        // %45 İhtimalle Elindeki Bir Aksiyon Kartını Oynar
+        if (bot.hand.length > 0 && Math.random() < 0.45) {
+          const cardToPlay = bot.hand[Math.floor(Math.random() * bot.hand.length)];
+          playCard(cardToPlay, randomTarget);
+          return;
+        }
+
+        // Kart oynamazsa soruyu cevaplar
+        if (currentQuestion?.isMiniGame) {
+          handleMiniGameResult(Math.random() < 0.85); // %85 Mini Oyun Başarısı
+        } else if (currentQuestion?.options) {
+          const isCorrect = Math.random() < 0.85; // %85 Doğru Cevap
+          const choice = isCorrect ? currentQuestion.correct : (currentQuestion.correct + 1) % 4;
+          answerQuestion(choice);
+        }
+      }, 1500); // 1.5 Saniye düşünme süresi
+    }
+
+    return () => clearTimeout(botTimer);
+  }, [gameState, turnIndex, currentQuestion, showChaosWheel]);
 
   useEffect(() => {
     let timerId;
@@ -311,7 +342,6 @@ export function GameProvider({ children }) {
     }
   };
 
-  // KART OYNAMA (RAKİP HEDEF DESTEKLİ)
   const playCard = (card, targetPlayer = null) => {
     if (gameState !== 'PLAYING') return;
     sounds.playBeep(1000, 0.1);
