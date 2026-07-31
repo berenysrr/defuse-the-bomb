@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { sounds } from '../utils/audio';
+import { roomManager } from '../utils/multiplayer';
 import confetti from 'canvas-confetti';
 
 const GameContext = createContext();
@@ -54,6 +55,8 @@ const CARD_TYPES = [
 
 export function GameProvider({ children }) {
   const [gameState, setGameState] = useState('LOBBY');
+  const [activeRoomCode, setActiveRoomCode] = useState(null);
+
   const [turnIndex, setTurnIndex] = useState(0); 
   const [turnDirection, setTurnDirection] = useState(1); 
   const [timeLeft, setTimeLeft] = useState(60);
@@ -76,7 +79,7 @@ export function GameProvider({ children }) {
     { id: 5, color: '#a855f7', isCut: false }
   ]);
 
-  const [explodingWireId, setExplodingWireId] = useState(null); 
+  const [explodingWireId, setExplodingWireId] = useState(1); 
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [usedQuestionIds, setUsedQuestionIds] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -90,9 +93,11 @@ export function GameProvider({ children }) {
     return { ...availableTypes[randomIndex], uniqueId: Math.random() };
   };
 
-  const startGame = (customPlayerConfigs = []) => {
+  const startGame = (customPlayerConfigs = [], roomCode = null) => {
     sounds.init();
     setGameState('PLAYING');
+    setActiveRoomCode(roomCode);
+
     setTurnIndex(0);
     setTurnDirection(1);
     setTimeLeft(60);
@@ -100,31 +105,8 @@ export function GameProvider({ children }) {
     setLastPlayedCard(null);
     setWireEffect(null);
 
-    resetWires();
-
-    const defaultNames = ['Çılgın Maymun', 'Cyber Robot', 'Ninja Kedi', 'Hacker Tilki', 'Uzaylı Alien', 'Gamer Ayı'];
-
-    const newPlayers = customPlayerConfigs.map((config, idx) => {
-      const card1 = getRandomCard([]);
-      const card2 = getRandomCard([card1]);
-      return {
-        id: idx,
-        name: config.name?.trim() !== '' ? config.name : defaultNames[idx % defaultNames.length],
-        avatar: config.avatar || AVATARS[idx % AVATARS.length],
-        lives: 1, // ANİ ÖLÜM (SUDDEN DEATH ROULETTE): 1 YANLIŞ KABLO = ANINDA PATLAMA VE ELENME!
-        score: 0,
-        hand: [card1, card2],
-        hasShield: false
-      };
-    });
-
-    setPlayers(newPlayers);
-    pickNewQuestion();
-    addLog(`💥 ANİ ÖLÜM RULETİ BAŞLADI! Yanlış kabloyu kesen anında patlar!`);
-  };
-
-  const resetWires = () => {
-    setExplodingWireId(Math.floor(Math.random() * 5) + 1);
+    const initialExplodeId = Math.floor(Math.random() * 5) + 1;
+    setExplodingWireId(initialExplodeId);
     setWires([
       { id: 1, color: '#ef4444', isCut: false },
       { id: 2, color: '#3b82f6', isCut: false },
@@ -132,6 +114,88 @@ export function GameProvider({ children }) {
       { id: 4, color: '#22c55e', isCut: false },
       { id: 5, color: '#a855f7', isCut: false }
     ]);
+
+    const defaultNames = ['Çılgın Maymun', 'Cyber Robot', 'Ninja Kedi', 'Hacker Tilki', 'Uzaylı Alien', 'Gamer Ayı'];
+
+    const newPlayers = customPlayerConfigs.map((config, idx) => {
+      const card1 = getRandomCard([]);
+      const card2 = getRandomCard([card1]);
+      return {
+        id: config.id || idx,
+        name: config.name?.trim() !== '' ? config.name : defaultNames[idx % defaultNames.length],
+        avatar: config.avatar || AVATARS[idx % AVATARS.length],
+        lives: 1, // Ani Ölüm Ruleti
+        score: 0,
+        hand: [card1, card2],
+        hasShield: false
+      };
+    });
+
+    setPlayers(newPlayers);
+    const firstQ = QUESTION_BANK[0];
+    setCurrentQuestion(firstQ);
+    setUsedQuestionIds([firstQ.id]);
+
+    addLog(`💥 ANİ ÖLÜM RULETİ BAŞLADI! Yanlış kabloyu kesen anında patlar!`);
+  };
+
+  // OYUN İÇİ GERÇEK ZAMANLI DİNLEYİCİ (MULTIPLE DEVICES REALTIME SYNC)
+  useEffect(() => {
+    if (!activeRoomCode) return;
+
+    const unsubscribe = roomManager.subscribe(activeRoomCode, (payload) => {
+      if (!payload) return;
+
+      if (payload.type === 'GAME_STATE_UPDATE' && payload.inGameState) {
+        const s = payload.inGameState;
+        if (s.turnIndex !== undefined) setTurnIndex(s.turnIndex);
+        if (s.turnDirection !== undefined) setTurnDirection(s.turnDirection);
+        if (s.timeLeft !== undefined) setTimeLeft(s.timeLeft);
+        if (s.players) setPlayers(s.players);
+        if (s.wires) setWires(s.wires);
+        if (s.currentQuestion) setCurrentQuestion(s.currentQuestion);
+        if (s.explodingWireId) setExplodingWireId(s.explodingWireId);
+        if (s.lastPlayedCard !== undefined) setLastPlayedCard(s.lastPlayedCard);
+        if (s.wireEffect !== undefined) setWireEffect(s.wireEffect);
+        if (s.gameState) setGameState(s.gameState);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [activeRoomCode]);
+
+  // Oyun durumunu buluta yayınla
+  const syncInGameState = (updatedState = {}) => {
+    if (!activeRoomCode) return;
+
+    const payload = {
+      turnIndex: updatedState.turnIndex !== undefined ? updatedState.turnIndex : turnIndex,
+      turnDirection: updatedState.turnDirection !== undefined ? updatedState.turnDirection : turnDirection,
+      timeLeft: updatedState.timeLeft !== undefined ? updatedState.timeLeft : timeLeft,
+      players: updatedState.players || players,
+      wires: updatedState.wires || wires,
+      currentQuestion: updatedState.currentQuestion || currentQuestion,
+      explodingWireId: updatedState.explodingWireId || explodingWireId,
+      lastPlayedCard: updatedState.lastPlayedCard !== undefined ? updatedState.lastPlayedCard : lastPlayedCard,
+      wireEffect: updatedState.wireEffect !== undefined ? updatedState.wireEffect : wireEffect,
+      gameState: updatedState.gameState || gameState
+    };
+
+    roomManager.broadcastInGameState(payload);
+  };
+
+  const resetWires = () => {
+    const nextExplodeId = Math.floor(Math.random() * 5) + 1;
+    const newWires = [
+      { id: 1, color: '#ef4444', isCut: false },
+      { id: 2, color: '#3b82f6', isCut: false },
+      { id: 3, color: '#eab308', isCut: false },
+      { id: 4, color: '#22c55e', isCut: false },
+      { id: 5, color: '#a855f7', isCut: false }
+    ];
+    setExplodingWireId(nextExplodeId);
+    setWires(newWires);
+    return { nextExplodeId, newWires };
   };
 
   const pickNewQuestion = () => {
@@ -143,6 +207,7 @@ export function GameProvider({ children }) {
     const randomQ = availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
     setUsedQuestionIds(prev => [...prev, randomQ.id]);
     setCurrentQuestion(randomQ);
+    return randomQ;
   };
 
   const addLog = (msg) => {
@@ -164,7 +229,7 @@ export function GameProvider({ children }) {
         });
       }, 1000);
     }
-    return () => clearTimeout(timerId);
+    return () => clearInterval(timerId);
   }, [gameState, timeLeft]);
 
   const handleTimeOut = () => {
@@ -180,8 +245,13 @@ export function GameProvider({ children }) {
     }
     
     setTurnIndex(nextIdx);
-    pickNewQuestion();
+    const nextQ = pickNewQuestion();
     addLog(`👉 SIRA: ${players[nextIdx].name}'TA!`);
+
+    syncInGameState({
+      turnIndex: nextIdx,
+      currentQuestion: nextQ
+    });
   };
 
   const answerQuestion = (optionIndex) => {
@@ -189,7 +259,8 @@ export function GameProvider({ children }) {
 
     if (optionIndex === currentQuestion.correct) {
       sounds.playBeep(1200, 0.1);
-      setPlayers(prev => prev.map((p, idx) => idx === turnIndex ? { ...p, score: p.score + 10 } : p));
+      const newPlayers = players.map((p, idx) => idx === turnIndex ? { ...p, score: p.score + 10 } : p);
+      setPlayers(newPlayers);
       addLog(`✅ ${players[turnIndex].name} doğru bildi! (+10 Puan)`);
       passTurn();
     } else {
@@ -201,7 +272,8 @@ export function GameProvider({ children }) {
   const handleMiniGameResult = (isSuccess) => {
     if (isSuccess) {
       sounds.playBeep(1400, 0.15);
-      setPlayers(prev => prev.map((p, idx) => idx === turnIndex ? { ...p, score: p.score + 15 } : p));
+      const newPlayers = players.map((p, idx) => idx === turnIndex ? { ...p, score: p.score + 15 } : p);
+      setPlayers(newPlayers);
       addLog(`🎯 MİNİ OYUN BAŞARILI! (+15 Puan)`);
       passTurn();
     } else {
@@ -211,13 +283,15 @@ export function GameProvider({ children }) {
   };
 
   const giveCardToPlayer = (playerIdx) => {
-    setPlayers(prev => prev.map((p, idx) => {
+    const updated = players.map((p, idx) => {
       if (idx === playerIdx) {
         const newCard = getRandomCard(p.hand);
         return { ...p, hand: [...p.hand, newCard] };
       }
       return p;
-    }));
+    });
+    setPlayers(updated);
+    return updated;
   };
 
   const cutRandomWire = (targetPlayerIdx = null) => {
@@ -226,9 +300,11 @@ export function GameProvider({ children }) {
     if (uncutWires.length === 0) return;
 
     const chosenWire = uncutWires[Math.floor(Math.random() * uncutWires.length)];
-    setWires(prev => prev.map(w => w.id === chosenWire.id ? { ...w, isCut: true } : w));
+    const newWires = wires.map(w => w.id === chosenWire.id ? { ...w, isCut: true } : w);
+    setWires(newWires);
 
-    setWireEffect({ color: chosenWire.color, isExplosion: chosenWire.id === explodingWireId });
+    const effect = { color: chosenWire.color, isExplosion: chosenWire.id === explodingWireId };
+    setWireEffect(effect);
     setTimeout(() => setWireEffect(null), 600);
 
     const victimIdx = targetPlayerIdx !== null ? targetPlayerIdx : turnIndex;
@@ -237,28 +313,34 @@ export function GameProvider({ children }) {
       if (players[victimIdx].hasShield) {
         sounds.playBeep(1500, 0.3);
         addLog(`🛡️ KALKAN KORUDU! ${players[victimIdx].name} kurtuldu!`);
-        setPlayers(prev => prev.map((p, idx) => idx === victimIdx ? { ...p, hasShield: false } : p));
-        resetWires();
+        const newP = players.map((p, idx) => idx === victimIdx ? { ...p, hasShield: false } : p);
+        setPlayers(newP);
+        const { nextExplodeId, newWires: freshWires } = resetWires();
         setTimeLeft(60);
         passTurn();
+
+        syncInGameState({
+          players: newP,
+          wires: freshWires,
+          explodingWireId: nextExplodeId,
+          timeLeft: 60
+        });
       } else {
-        // ANİ ÖLÜM PATLAMASI!
         triggerExplosionForPlayer(victimIdx);
       }
     } else {
       sounds.playBuzzer();
       addLog(`✂️ Güvenli kablo kesildi! Bomba patlamadı.`);
       passTurn();
+      syncInGameState({ wires: newWires });
     }
   };
 
-  // ANİ ÖLÜM (SUDDEN DEATH) PATLAMA VE ELENME MANTIĞI
   const triggerExplosionForPlayer = (playerIdx) => {
     sounds.playExplosion();
     const victim = players[playerIdx];
     addLog(`💥 ANİ ÖLÜM! Bomba patladı ve ${victim.name} ELENDİ!`);
 
-    // Oyuncunun canı direkt 0 olur ve elenir
     const updatedPlayers = players.map((p, idx) => idx === playerIdx ? { ...p, lives: 0 } : p);
     setPlayers(updatedPlayers);
 
@@ -266,11 +348,23 @@ export function GameProvider({ children }) {
     if (alivePlayers.length === 1) {
       setGameState('GAME_OVER');
       confetti({ particleCount: 150, spread: 80 });
-      addLog(`🏆 ŞAMPİYON: ${alivePlayers[0].name}! HAYATTA KALAN TEK KİŞİ O OLDU! 🎉`);
+      addLog(`🏆 ŞAMPİYON: ${alivePlayers[0].name}! 🎉`);
+
+      syncInGameState({
+        players: updatedPlayers,
+        gameState: 'GAME_OVER'
+      });
     } else {
-      resetWires();
+      const { nextExplodeId, newWires } = resetWires();
       setTimeLeft(60);
       passTurn();
+
+      syncInGameState({
+        players: updatedPlayers,
+        wires: newWires,
+        explodingWireId: nextExplodeId,
+        timeLeft: 60
+      });
     }
   };
 
@@ -279,10 +373,12 @@ export function GameProvider({ children }) {
     sounds.playBeep(1000, 0.1);
 
     const targetName = targetPlayer ? targetPlayer.name : '';
-    setLastPlayedCard({ ...card, player: players[turnIndex].name });
+    const lastPlayed = { ...card, player: players[turnIndex].name };
+    setLastPlayedCard(lastPlayed);
     setTimeout(() => setLastPlayedCard(null), 800);
 
-    setPlayers(prev => prev.map((p, idx) => idx === turnIndex ? { ...p, hand: p.hand.filter(c => c.uniqueId !== card.uniqueId) } : p));
+    let updatedPlayers = players.map((p, idx) => idx === turnIndex ? { ...p, hand: p.hand.filter(c => c.uniqueId !== card.uniqueId) } : p);
+    setPlayers(updatedPlayers);
 
     switch (card.id) {
       case 'PASS':
@@ -298,7 +394,8 @@ export function GameProvider({ children }) {
 
       case 'REVERSE':
         addLog(`🔄 ${players[turnIndex].name} YÖNÜ TERS ÇEVİRDİ!`);
-        setTurnDirection(prev => prev * -1);
+        const nextDir = turnDirection * -1;
+        setTurnDirection(nextDir);
         passTurn();
         break;
 
@@ -316,42 +413,52 @@ export function GameProvider({ children }) {
       case 'SPEED_UP':
         addLog(`⚡ ${players[turnIndex].name} ORTAK ZAMANI 5 SANİYE YAPTI!`);
         setTimeLeft(5);
+        syncInGameState({ timeLeft: 5, lastPlayedCard: lastPlayed });
         break;
 
       case 'ADD_TIME':
         addLog(`⏳ ${players[turnIndex].name} ORTAK BOMBAYA +5s EKLEDİ!`);
-        setTimeLeft(prev => prev + 5);
+        const newTime = timeLeft + 5;
+        setTimeLeft(newTime);
+        syncInGameState({ timeLeft: newTime, lastPlayedCard: lastPlayed });
         break;
 
       case 'RESET_WIRES':
         addLog(`🎲 ${players[turnIndex].name} KABLOLARI SIFIRLADI!`);
-        resetWires();
+        const { nextExplodeId, newWires } = resetWires();
+        syncInGameState({ wires: newWires, explodingWireId: nextExplodeId, lastPlayedCard: lastPlayed });
         break;
 
       case 'SHIELD':
         addLog(`🛡️ ${players[turnIndex].name} KALKAN TAKINDI!`);
-        setPlayers(prev => prev.map((p, idx) => idx === turnIndex ? { ...p, hasShield: true } : p));
+        const shieldPlayers = updatedPlayers.map((p, idx) => idx === turnIndex ? { ...p, hasShield: true } : p);
+        setPlayers(shieldPlayers);
+        syncInGameState({ players: shieldPlayers, lastPlayedCard: lastPlayed });
         break;
 
       case 'STEAL':
         if (targetPlayer) {
           const targetIdx = players.findIndex(p => p.id === targetPlayer.id);
-          const victim = players[targetIdx];
+          const victim = updatedPlayers[targetIdx];
           if (victim && victim.hand.length > 0) {
             const stolenCard = victim.hand[0];
-            setPlayers(prev => prev.map((p, idx) => {
+            const stolenPlayers = updatedPlayers.map((p, idx) => {
               if (idx === targetIdx) return { ...p, hand: p.hand.filter(c => c.uniqueId !== stolenCard.uniqueId) };
               if (idx === turnIndex) return { ...p, hand: [...p.hand, stolenCard] };
               return p;
-            }));
+            });
+            setPlayers(stolenPlayers);
             addLog(`🃏 ${players[turnIndex].name}, ${targetName}'DAN KART ÇALDI!`);
+            syncInGameState({ players: stolenPlayers, lastPlayedCard: lastPlayed });
           } else {
-            giveCardToPlayer(turnIndex);
-            addLog(`🃏 ${players[turnIndex].name} DESTDENDEN KART ÇEKİK!`);
+            const extraPlayers = giveCardToPlayer(turnIndex);
+            addLog(`🃏 ${players[turnIndex].name} DESTDENDEN KART ÇEKTİ!`);
+            syncInGameState({ players: extraPlayers, lastPlayedCard: lastPlayed });
           }
         } else {
-          giveCardToPlayer(turnIndex);
+          const extraPlayers = giveCardToPlayer(turnIndex);
           addLog(`🃏 ${players[turnIndex].name} +1 KART ÇEKTİ!`);
+          syncInGameState({ players: extraPlayers, lastPlayedCard: lastPlayed });
         }
         break;
 

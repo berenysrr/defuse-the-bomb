@@ -42,9 +42,11 @@ export default function Lobby() {
     }
   }, []);
 
-  // GERÇEK ZAMANLI KÜRESEL ODA DİNLEYİCİSİ (FIREBASE CLOUD RELAY)
+  // GERÇEK ZAMANLI SPESİFİK ODA KODU DİNLEYİCİSİ (ROOMCODE SPESİFİK SUBSCRIBE)
   useEffect(() => {
-    const unsubscribe = roomManager.subscribe((payload) => {
+    if (!roomCode) return;
+
+    const unsubscribe = roomManager.subscribe(roomCode, (payload) => {
       if (!payload) return;
 
       // 1. Oda durumu güncellendiğinde oyuncu listesini yenile
@@ -56,12 +58,12 @@ export default function Lobby() {
 
       // 2. Oda kurucusu oyunu başlattığında tüm cihazlarda maçı başlat!
       if (payload.type === 'GAME_START' && payload.players) {
-        startGame(payload.players);
+        startGame(payload.players, roomCode);
       }
     });
 
     return () => unsubscribe();
-  }, [roomCode]);
+  }, [roomCode, startGame]);
 
   // 1 Cihazda oyuncu sayısı değiştiğinde
   const handleCountChange = (count) => {
@@ -135,9 +137,9 @@ export default function Lobby() {
   const handleStartGame = async () => {
     if (mode === 'ROOM_WAIT') {
       await roomManager.startGameBroadcast(joinedPlayers);
-      startGame(joinedPlayers);
+      startGame(joinedPlayers, roomCode);
     } else {
-      startGame(localConfigs);
+      startGame(localConfigs, null);
     }
   };
 
@@ -181,7 +183,7 @@ export default function Lobby() {
         </button>
       </motion.div>
 
-      {/* MOD SEÇİMİ (ODA KUR / ODAYA KATIL / 1 EKRANDA OYNA) */}
+      {/* MOD SEÇİMİ */}
       <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '24px' }}>
         <button
           onClick={() => setMode('CREATE')}
@@ -404,7 +406,6 @@ export default function Lobby() {
             ))}
           </div>
 
-          {/* SADECE ODA KURUCUSUNA (HOST) OYUNU BAŞLAT BUTONU VER! KATILIMCILARA BEKLEME BANNERİ GÖSTER */}
           {isHost ? (
             <button onClick={handleStartGame} style={{ width: '100%', padding: '16px', background: 'linear-gradient(135deg, #ef4444, #b91c1c)', color: '#fff', fontWeight: 'bold', fontSize: '18px', border: 'none', borderRadius: '14px', cursor: 'pointer', boxShadow: '0 10px 25px rgba(239, 68, 68, 0.5)' }}>
               🎮 OYUNU BAŞLAT! (HOST)
