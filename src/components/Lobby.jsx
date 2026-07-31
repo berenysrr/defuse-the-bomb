@@ -254,8 +254,12 @@ export default function Lobby() {
       {/* 1. ODA OLUŞTURMA ALANI */}
       {mode === 'CREATE' && (
         <form onSubmit={handleCreateRoom} className="glass-panel" style={{ padding: '24px', borderRadius: '18px', background: '#0f172a', border: '1.5px solid #f59e0b', marginBottom: '24px' }}>
-          <h3 style={{ margin: '0 0 14px 0', color: '#f59e0b', fontSize: '18px' }}>🌐 KENDİ ODANI OLUŞTUR</h3>
+          <h3 style={{ margin: '0 0 10px 0', color: '#f59e0b', fontSize: '18px' }}>👑 KENDİ ODANI KUR (HOST OL)</h3>
           
+          <div style={{ padding: '10px 14px', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '10px', fontSize: '12px', color: '#fcd34d', marginBottom: '16px', lineHeight: '1.5' }}>
+            ⚠️ <strong>DİKKAT:</strong> Sadece arkadaşların için YENİ bir oyun kuruyorsan bu sekmeden oda oluştur. Eğer arkadaşının kurduğu odaya girmek istiyorsan yukarıdan <strong>"ODAYA KATIL (Join)"</strong> sekmesini seç!
+          </div>
+
           <label style={{ fontSize: '13px', color: '#cbd5e1', display: 'block', marginBottom: '6px' }}>Adınız:</label>
           <input
             type="text"
@@ -289,7 +293,7 @@ export default function Lobby() {
 
           <button type="submit" disabled={isJoining} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #f59e0b, #b45309)', color: '#fff', fontWeight: 'bold', fontSize: '16px', border: 'none', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
             {isJoining ? <Loader size={18} className="spin" /> : null}
-            <span>ODA KODU AL VE BAŞLAT ➔</span>
+            <span>👑 YENİ ODA KUR VE KOD AL ➔</span>
           </button>
         </form>
       )}
@@ -297,15 +301,19 @@ export default function Lobby() {
       {/* 2. ODAYA KATILMA ALANI */}
       {mode === 'JOIN' && (
         <form onSubmit={handleJoinRoom} className="glass-panel" style={{ padding: '24px', borderRadius: '18px', background: '#0f172a', border: '1.5px solid #06b6d4', marginBottom: '24px' }}>
-          <h3 style={{ margin: '0 0 14px 0', color: '#06b6d4', fontSize: '18px' }}>📲 ARKADAŞININ ODASINA KATIL</h3>
+          <h3 style={{ margin: '0 0 10px 0', color: '#06b6d4', fontSize: '18px' }}>📲 ARKADAŞININ ODASINA KATIL</h3>
+
+          <div style={{ padding: '10px 14px', background: 'rgba(6,182,212,0.12)', border: '1px solid rgba(6,182,212,0.3)', borderRadius: '10px', fontSize: '12px', color: '#67e8f9', marginBottom: '16px', lineHeight: '1.5' }}>
+            📲 Kurulmuş bir oyuna katılmak için arkadaşınızın size verdiği 5 haneli oda kodunu girin (Örn: <strong>DIU8B</strong>).
+          </div>
 
           <label style={{ fontSize: '13px', color: '#cbd5e1', display: 'block', marginBottom: '6px' }}>Oda Kodu:</label>
           <input
             type="text"
-            placeholder="Oda kodunu yazın (ör: BOMB1)..."
+            placeholder="Oda kodunu yazın (ör: DIU8B)..."
             value={inputCode}
             onChange={(e) => setInputCode(e.target.value.toUpperCase())}
-            style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #334155', background: '#1e293b', color: '#f59e0b', fontSize: '18px', fontWeight: 'bold', letterSpacing: '2px', marginBottom: '16px' }}
+            style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '2px solid #06b6d4', background: '#1e293b', color: '#fde047', fontSize: '20px', fontWeight: 'bold', letterSpacing: '3px', marginBottom: '16px', textAlign: 'center' }}
           />
 
           <label style={{ fontSize: '13px', color: '#cbd5e1', display: 'block', marginBottom: '6px' }}>Adınız:</label>
@@ -341,15 +349,17 @@ export default function Lobby() {
 
           <button type="submit" disabled={isJoining} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #06b6d4, #0891b2)', color: '#fff', fontWeight: 'bold', fontSize: '16px', border: 'none', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
             {isJoining ? <Loader size={18} className="spin" /> : null}
-            <span>ODAYA KATIL ➔</span>
+            <span>📲 ODAYA KATIL (KOD İLE) ➔</span>
           </button>
         </form>
       )}
 
       {/* 3. ODA BEKLEME LOBİSİ (ROOM WAIT) */}
       {mode === 'ROOM_WAIT' && (
-        <div className="glass-panel" style={{ padding: '24px', borderRadius: '18px', background: '#0f172a', border: '2px solid #f59e0b', textAlign: 'center', marginBottom: '24px' }}>
-          <h3 style={{ margin: 0, color: '#f59e0b', fontSize: '20px' }}>ODA KODUNUZ:</h3>
+        <div className="glass-panel" style={{ padding: '24px', borderRadius: '18px', background: '#0f172a', border: isHost ? '2px solid #f59e0b' : '2px solid #06b6d4', textAlign: 'center', marginBottom: '24px' }}>
+          <h3 style={{ margin: 0, color: isHost ? '#f59e0b' : '#06b6d4', fontSize: '18px' }}>
+            {isHost ? '👑 KURDUĞUNUZ ODA KODU:' : '📲 KATILDIĞINIZ ODA KODU:'}
+          </h3>
           <div style={{ fontSize: '42px', fontWeight: '900', color: '#fde047', letterSpacing: '6px', margin: '10px 0', textShadow: '0 0 20px rgba(253, 224, 71, 0.6)' }}>
             {roomCode}
           </div>
@@ -400,10 +410,14 @@ export default function Lobby() {
           <h4 style={{ color: '#cbd5e1', fontSize: '15px', margin: '0 0 14px 0' }}>Odadaki Oyuncular ({joinedPlayers.length}):</h4>
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '26px' }}>
             {joinedPlayers.map((p, idx) => (
-              <div key={p.id || idx} style={{ background: '#1e293b', padding: '10px 20px', borderRadius: '14px', border: '1.5px solid #334155', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
+              <div key={p.id || idx} style={{ background: '#1e293b', padding: '10px 20px', borderRadius: '14px', border: p.isHost ? '1.5px solid #f59e0b' : '1.5px solid #06b6d4', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
                 <span style={{ fontSize: '26px' }}>{p.avatar?.icon}</span>
                 <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#fff' }}>{p.name}</span>
-                {p.isHost && <span style={{ fontSize: '10px', background: '#f59e0b', color: '#000', padding: '2px 6px', borderRadius: '6px', fontWeight: 'bold' }}>HOST</span>}
+                {p.isHost ? (
+                  <span style={{ fontSize: '10px', background: '#f59e0b', color: '#000', padding: '2px 6px', borderRadius: '6px', fontWeight: 'bold' }}>👑 HOST</span>
+                ) : (
+                  <span style={{ fontSize: '10px', background: '#06b6d4', color: '#fff', padding: '2px 6px', borderRadius: '6px', fontWeight: 'bold' }}>📲 KATILAN</span>
+                )}
               </div>
             ))}
           </div>
@@ -418,7 +432,7 @@ export default function Lobby() {
               <span>
                 {joinedPlayers.some(p => p.isHost)
                   ? '⏳ ODA KURUCUSUNUN (HOST) OYUNU BAŞLATMASI BEKLENİYOR...'
-                  : '🔄 ODA KURUCUSUNA BAĞLANILIYOR...'}
+                  : `🔄 ODA KURUCUSUNA (${roomCode}) BAĞLANILIYOR...`}
               </span>
             </div>
           )}

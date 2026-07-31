@@ -70,7 +70,7 @@ class RoomManager {
       state: this.roomState
     });
 
-    // Host Kalp Atışı: Her 1.5 saniyede oda durumunu yayınla
+    // Host Kalp Atışı: Her 1 saniyede oda durumunu yayınla
     this.heartbeatInterval = setInterval(() => {
       if (this.isHost && this.roomCode === code) {
         this.publishToCloud(code, {
@@ -79,7 +79,7 @@ class RoomManager {
           state: this.roomState
         });
       }
-    }, 1500);
+    }, 1000);
 
     return code;
   }
@@ -118,7 +118,7 @@ class RoomManager {
     // Anında gönder
     this.publishToCloud(cleanCode, joinPayload);
 
-    // Joiner Yeniden Deneme Döngüsü: Host'tan onay gelene kadar her 1.5s'de katılım isteği at
+    // Joiner Yeniden Deneme Döngüsü: Host'un oyuncu listesinde Host görünene kadar her 1s'de istek at
     this.heartbeatInterval = setInterval(() => {
       if (!this.isHost && this.roomCode === cleanCode) {
         const hasHost = this.roomState.players.some(p => p.isHost);
@@ -126,7 +126,7 @@ class RoomManager {
           this.publishToCloud(cleanCode, joinPayload);
         }
       }
-    }, 1500);
+    }, 1000);
 
     return this.roomState;
   }
@@ -149,7 +149,6 @@ class RoomManager {
     };
 
     await this.publishToCloud(this.roomCode, payload);
-
     this.notifyListeners(this.roomCode, payload);
   }
 
@@ -166,7 +165,6 @@ class RoomManager {
     };
 
     await this.publishToCloud(this.roomCode, payload);
-
     this.notifyListeners(this.roomCode, payload);
   }
 
@@ -199,8 +197,7 @@ class RoomManager {
           }
         }
       } catch (e) {
-        // İptal veya ağ hatasında 800ms bekle ve devam et
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 600));
       }
       await new Promise(r => setTimeout(r, 100));
     }
@@ -213,7 +210,7 @@ class RoomManager {
     // A) Host: Katılma İsteğini İşler
     if (payload.type === 'JOIN_REQUEST' && payload.player && this.isHost) {
       const exists = this.roomState.players.some(
-        p => p.id === payload.player.id || (p.name && p.name === payload.player.name)
+        p => p.id === payload.player.id || (p.name && p.name.trim().toLowerCase() === payload.player.name.trim().toLowerCase())
       );
       if (!exists) {
         this.roomState.players.push(payload.player);
@@ -236,16 +233,22 @@ class RoomManager {
     // B) Katılımcılar & Host: Güncel Oda Durumu
     if (payload.type === 'STATE_UPDATE' && payload.state) {
       if (payload.state.players && payload.state.players.length > 0) {
-        if (this.isHost && this.roomState.players.length > payload.state.players.length) {
-          // Host'un kendi oyuncu listesi daha güncelse koru
+        if (this.isHost) {
+          const currentHostIds = new Set(this.roomState.players.map(p => p.id));
+          payload.state.players.forEach(p => {
+            if (!currentHostIds.has(p.id)) {
+              this.roomState.players.push(p);
+            }
+          });
         } else {
           this.roomState = payload.state;
-          this.notifyListeners(this.roomCode, {
-            type: 'STATE_UPDATE',
-            roomCode: this.roomCode,
-            state: this.roomState
-          });
         }
+
+        this.notifyListeners(this.roomCode, {
+          type: 'STATE_UPDATE',
+          roomCode: this.roomCode,
+          state: this.roomState
+        });
       }
     }
 
@@ -274,13 +277,16 @@ class RoomManager {
     }
   }
 
-  // PubNub Üzerinden Yayın Yap
+  // PubNub POST Yöntemi ile Yayın Yap (Paket boyutu ve mobil proxy sınırlaması kalmaz)
   async publishToCloud(code, payload) {
     try {
       const channel = `defuse_bomb_room_${code}`;
-      const msgStr = encodeURIComponent(JSON.stringify(payload));
-      const url = `https://ps.pubnub.com/publish/${PUBNUB_PUB_KEY}/${PUBNUB_SUB_KEY}/0/${channel}/0/${msgStr}`;
-      await fetch(url);
+      const url = `https://ps.pubnub.com/publish/${PUBNUB_PUB_KEY}/${PUBNUB_SUB_KEY}/0/${channel}/0`;
+      await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
     } catch (e) {
       console.warn('PubNub pub error:', e);
     }
