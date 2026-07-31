@@ -1,11 +1,13 @@
-// GÜVENİLİR KÜRESEL İNTERNET ODA SENKRONİZASYON MOTORU (NTFY.SH REAL-TIME PUBSUB + SINCE HISTORY)
+// GÜVENİLİR KÜRESEL İNTERNET ODA SENKRONİZASYON MOTORU (HTTP CLOUD POLLING ENGINE)
 
 class RoomManager {
   constructor() {
     this.roomCode = null;
     this.isHost = false;
     this.listeners = [];
-    this.eventSource = null;
+    this.pollInterval = null;
+    this.processedMsgIds = new Set();
+
     this.roomState = {
       code: null,
       players: [],
@@ -26,14 +28,11 @@ class RoomManager {
       gameState: 'LOBBY'
     };
 
-    // Küresel Canlı PubSub Kanalına Abone Ol (Geçmiş 10dk mesajları dahil)
-    this.subscribeToGlobalChannel(code);
+    // Bulut polling başlat (0.8s aralıkla)
+    this.startCloudPolling(code);
 
-    // Oda Kuruldu Yayın Yap
-    setTimeout(() => {
-      this.broadcastStateToCloud(this.roomState);
-    }, 300);
-
+    // İlk oda durumunu yayınla
+    this.broadcastStateToCloud(this.roomState);
     return code;
   }
 
@@ -49,52 +48,60 @@ class RoomManager {
       gameState: 'LOBBY'
     };
 
-    // Küresel Canlı PubSub Kanalına Abone Ol
-    this.subscribeToGlobalChannel(cleanCode);
+    // Bulut polling başlat (0.8s aralıkla)
+    this.startCloudPolling(cleanCode);
 
-    // Katılma isteğini 3 defa tekrarla (Garantili Yayın)
-    const sendJoinReq = () => {
-      const joinPayload = {
-        type: 'JOIN_REQUEST',
-        roomCode: cleanCode,
-        player: playerConfig
-      };
-      this.publishToCloud(cleanCode, joinPayload);
+    // Host'a Katılma İsteği Gönder (JOIN_REQUEST)
+    const joinPayload = {
+      type: 'JOIN_REQUEST',
+      roomCode: cleanCode,
+      player: playerConfig
     };
-
-    sendJoinReq();
-    setTimeout(sendJoinReq, 600);
-    setTimeout(sendJoinReq, 1500);
+    this.publishToCloud(cleanCode, joinPayload);
 
     return this.roomState;
   }
 
-  // 3. KÜRESEL PUBSUB KANALINA CANLI ABONE OL (NTFY.SH REAL-TIME SSE)
-  subscribeToGlobalChannel(code) {
-    if (this.eventSource) {
-      this.eventSource.close();
-    }
+  // 3. BULUT POLING MOTORU (NTFY POLL ENDPOINT - %100 TÜM TELEFONLARDA ÇALIŞIR)
+  startCloudPolling(code) {
+    if (this.pollInterval) clearInterval(this.pollInterval);
 
-    // `since=10m` ekleyerek geçmiş 10 dakikadaki tüm oda mesajlarını anında çeker!
-    const channelUrl = `https://ntfy.sh/defuse_bomb_room_${code}/json?since=10m`;
-    this.eventSource = new EventSource(channelUrl);
-
-    this.eventSource.onmessage = (event) => {
+    const pollCloud = async () => {
       try {
-        const messageData = JSON.parse(event.data);
-        if (messageData && messageData.message) {
-          const payload = JSON.parse(messageData.message);
-          this.handleCloudPayload(payload);
-        }
+        const response = await fetch(`https://ntfy.sh/defuse_bomb_room_${code}/json?poll=1&since=10m`);
+        if (!response.ok) return;
+
+        const text = await response.text();
+        const lines = text.trim().split('\n');
+
+        lines.forEach(line => {
+          if (!line) return;
+          try {
+            const data = JSON.parse(line);
+            if (data && data.id && !this.processedMsgIds.has(data.id)) {
+              this.processedMsgIds.add(data.id);
+              if (data.message) {
+                const payload = JSON.parse(data.message);
+                this.handleCloudPayload(payload);
+              }
+            }
+          } catch (e) {}
+        });
       } catch (e) {}
     };
+
+    // Anında ilk sorguyu yap
+    pollCloud();
+
+    // Her 800ms'de bir sorgula
+    this.pollInterval = setInterval(pollCloud, 800);
   }
 
   // Buluttan Gelen Mesajları İşle
   handleCloudPayload(payload) {
     if (!payload || payload.roomCode !== this.roomCode) return;
 
-    // A) Oda Kurucusu (Host) Yeni Katılan Oyuncuyu Kabul Eder
+    // A) Oda Kurucusu (Host) Katılan Oyuncuyu Kabul Eder
     if (payload.type === 'JOIN_REQUEST' && payload.player && this.isHost) {
       const exists = this.roomState.players.some(p => p.id === payload.player.id || p.name === payload.player.name);
       if (!exists) {
@@ -103,13 +110,11 @@ class RoomManager {
       }
     }
 
-    // B) Katılımcılar Güncel Oda Durumunu Alır
+    // B) Güncel Oda Durumu Yayınlandığında
     if (payload.type === 'STATE_UPDATE' && payload.state) {
-      // Eğer daha güncel bir oyuncu listesi geldiyse güncelle
       if (payload.state.players && payload.state.players.length >= this.roomState.players.length) {
         this.roomState = payload.state;
       } else {
-        // Yeni katılan kendi oyuncusunu kaybetmemek için birleştir
         const combined = [...this.roomState.players];
         payload.state.players.forEach(p => {
           if (!combined.some(c => c.id === p.id || c.name === p.name)) {
