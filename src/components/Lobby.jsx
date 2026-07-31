@@ -38,7 +38,7 @@ export default function Lobby() {
     const roomParam = params.get('room');
     if (roomParam) {
       setMode('JOIN');
-      setInputCode(roomParam.toUpperCase());
+      setInputCode(roomParam.trim().toUpperCase());
     }
   }, []);
 
@@ -76,11 +76,12 @@ export default function Lobby() {
   };
 
   // ODA OLUŞTUR (Host)
-  const handleCreateRoom = async () => {
+  const handleCreateRoom = async (e) => {
+    if (e) e.preventDefault();
     setIsJoining(true);
     const hostPlayer = {
       id: Date.now(),
-      name: myName.trim() !== '' ? myName : 'Oda Kurucu',
+      name: myName.trim() !== '' ? myName.trim() : 'Oda Kurucu',
       avatar: myAvatar
     };
     const code = await roomManager.createRoom(hostPlayer);
@@ -92,17 +93,20 @@ export default function Lobby() {
   };
 
   // ODAYA KATIL (Joiner)
-  const handleJoinRoom = async () => {
-    if (!inputCode) return;
+  const handleJoinRoom = async (e) => {
+    if (e) e.preventDefault();
+    const cleanCode = inputCode.trim().toUpperCase();
+    if (!cleanCode) return;
+
     setIsJoining(true);
     const joinerPlayer = {
       id: Date.now(),
-      name: myName.trim() !== '' ? myName : `Misafir Oyuncu`,
+      name: myName.trim() !== '' ? myName.trim() : `Misafir Oyuncu`,
       avatar: myAvatar
     };
     setIsHost(false);
-    const roomState = await roomManager.joinRoom(inputCode, joinerPlayer);
-    setRoomCode(inputCode);
+    const roomState = await roomManager.joinRoom(cleanCode, joinerPlayer);
+    setRoomCode(cleanCode);
     if (roomState && roomState.players) {
       setJoinedPlayers(roomState.players);
     } else {
@@ -245,7 +249,7 @@ export default function Lobby() {
 
       {/* 1. ODA OLUŞTURMA ALANI */}
       {mode === 'CREATE' && (
-        <div className="glass-panel" style={{ padding: '24px', borderRadius: '18px', background: '#0f172a', border: '1.5px solid #f59e0b', marginBottom: '24px' }}>
+        <form onSubmit={handleCreateRoom} className="glass-panel" style={{ padding: '24px', borderRadius: '18px', background: '#0f172a', border: '1.5px solid #f59e0b', marginBottom: '24px' }}>
           <h3 style={{ margin: '0 0 14px 0', color: '#f59e0b', fontSize: '18px' }}>🌐 KENDİ ODANI OLUŞTUR</h3>
           
           <label style={{ fontSize: '13px', color: '#cbd5e1', display: 'block', marginBottom: '6px' }}>Adınız:</label>
@@ -262,6 +266,7 @@ export default function Lobby() {
             {AVATARS.map(av => (
               <button
                 key={av.id}
+                type="button"
                 onClick={() => setMyAvatar(av)}
                 style={{
                   flex: 1,
@@ -278,16 +283,16 @@ export default function Lobby() {
             ))}
           </div>
 
-          <button disabled={isJoining} onClick={handleCreateRoom} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #f59e0b, #b45309)', color: '#fff', fontWeight: 'bold', fontSize: '16px', border: 'none', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+          <button type="submit" disabled={isJoining} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #f59e0b, #b45309)', color: '#fff', fontWeight: 'bold', fontSize: '16px', border: 'none', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
             {isJoining ? <Loader size={18} className="spin" /> : null}
             <span>ODA KODU AL VE BAŞLAT ➔</span>
           </button>
-        </div>
+        </form>
       )}
 
       {/* 2. ODAYA KATILMA ALANI */}
       {mode === 'JOIN' && (
-        <div className="glass-panel" style={{ padding: '24px', borderRadius: '18px', background: '#0f172a', border: '1.5px solid #06b6d4', marginBottom: '24px' }}>
+        <form onSubmit={handleJoinRoom} className="glass-panel" style={{ padding: '24px', borderRadius: '18px', background: '#0f172a', border: '1.5px solid #06b6d4', marginBottom: '24px' }}>
           <h3 style={{ margin: '0 0 14px 0', color: '#06b6d4', fontSize: '18px' }}>📲 ARKADAŞININ ODASINA KATIL</h3>
 
           <label style={{ fontSize: '13px', color: '#cbd5e1', display: 'block', marginBottom: '6px' }}>Oda Kodu:</label>
@@ -313,6 +318,7 @@ export default function Lobby() {
             {AVATARS.map(av => (
               <button
                 key={av.id}
+                type="button"
                 onClick={() => setMyAvatar(av)}
                 style={{
                   flex: 1,
@@ -329,11 +335,11 @@ export default function Lobby() {
             ))}
           </div>
 
-          <button disabled={isJoining} onClick={handleJoinRoom} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #06b6d4, #0891b2)', color: '#fff', fontWeight: 'bold', fontSize: '16px', border: 'none', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+          <button type="submit" disabled={isJoining} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #06b6d4, #0891b2)', color: '#fff', fontWeight: 'bold', fontSize: '16px', border: 'none', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
             {isJoining ? <Loader size={18} className="spin" /> : null}
             <span>ODAYA KATIL ➔</span>
           </button>
-        </div>
+        </form>
       )}
 
       {/* 3. ODA BEKLEME LOBİSİ (ROOM WAIT) */}
@@ -421,6 +427,7 @@ export default function Lobby() {
               {[2, 3, 4, 5, 6].map(num => (
                 <button
                   key={num}
+                  type="button"
                   onClick={() => handleCountChange(num)}
                   style={{
                     flex: 1,
@@ -457,6 +464,7 @@ export default function Lobby() {
                   {AVATARS.map(av => (
                     <button
                       key={av.id}
+                      type="button"
                       onClick={() => setLocalConfigs(prev => prev.map((c, i) => i === idx ? { ...c, avatar: av } : c))}
                       style={{
                         flex: 1,
