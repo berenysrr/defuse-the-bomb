@@ -1,18 +1,20 @@
-// GÜVENİLİR PUBNUB ÇİFT MOTORLU (WEBSOCKET + HTTP POST REST) KÜRESEL CANLI AKIŞ SİSTEMİ
+// GÜVENİLİR KÜRESEL GERÇEK ZAMANLI MQTT WEBSOCKET MOTORU
 
-const PUBNUB_SUB_KEY = 'demo';
-const PUBNUB_PUB_KEY = 'demo';
+import mqtt from 'mqtt';
+
+const BROKER_URLS = [
+  'wss://broker.emqx.io:8084/mqtt',
+  'wss://broker.hivemq.com:8000/mqtt'
+];
 
 class RoomManager {
   constructor() {
     this.roomCode = null;
     this.isHost = false;
     this.listeners = new Map();
-    this.pubnub = null;
+    this.client = null;
     this.heartbeatInterval = null;
     this.myPlayerConfig = null;
-    this.pollInterval = null;
-    this.lastTimeToken = '0';
 
     this.roomState = {
       code: null,
@@ -23,41 +25,21 @@ class RoomManager {
     };
   }
 
-  getPubNubInstance() {
-    if (this.pubnub) return this.pubnub;
-
-    const PubNubClass = window.PubNub;
-    if (PubNubClass) {
-      try {
-        this.pubnub = new PubNubClass({
-          publishKey: PUBNUB_PUB_KEY,
-          subscribeKey: PUBNUB_SUB_KEY,
-          userId: 'user_' + Math.random().toString(36).substring(2, 9),
-          ssl: true
-        });
-      } catch (e) {
-        console.warn('PubNub init error:', e);
-      }
-    }
-    return this.pubnub;
-  }
-
   stopStream() {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = null;
-    }
-    const pb = this.getPubNubInstance();
-    if (pb && this.roomCode) {
+    if (this.client) {
       try {
-        pb.unsubscribe({ channels: [`defuse_bomb_room_${this.roomCode}`] });
+        if (this.roomCode) {
+          this.client.unsubscribe(`defuse_bomb/room/${this.roomCode}`);
+        }
+        this.client.end();
       } catch (e) {
         // ignore
       }
+      this.client = null;
     }
   }
 
@@ -65,45 +47,47 @@ class RoomManager {
     this.stopStream();
     this.roomCode = code;
 
-    const channel = `defuse_bomb_room_${code}`;
+    const topic = `defuse_bomb/room/${code}`;
+    let brokerIndex = 0;
 
-    // 1. PubNub WebSocket Dinleyici
-    const pb = this.getPubNubInstance();
-    if (pb) {
+    const tryConnect = () => {
+      if (this.client) return;
+
+      const brokerUrl = BROKER_URLS[brokerIndex];
       try {
-        pb.removeAllListeners();
-        pb.addListener({
-          message: (evt) => {
-            if (evt && evt.message) {
-              this.handleCloudPayload(evt.message);
-            }
+        const client = mqtt.connect(brokerUrl, {
+          keepalive: 15,
+          clientId: 'defuse_' + Math.random().toString(16).substring(2, 8),
+          clean: true,
+          connectTimeout: 4000,
+          reconnectPeriod: 2000
+        });
+
+        client.on('connect', () => {
+          this.client = client;
+          client.subscribe(topic, { qos: 0 });
+        });
+
+        client.on('message', (t, message) => {
+          try {
+            const payload = JSON.parse(message.toString());
+            this.handleCloudPayload(payload);
+          } catch (e) {
+            // ignore
           }
         });
-        pb.subscribe({ channels: [channel] });
-      } catch (e) {
-        console.warn('PubNub SDK subscribe error:', e);
-      }
-    }
 
-    // 2. HTTP Polling Yedek Dinleyici (Soket Tıkanmasına Karşı 1.5s Güvenlik Ağı)
-    const pollFallback = async () => {
-      if (this.roomCode !== code) return;
-      try {
-        const url = `https://ps.pubnub.com/subscribe/${PUBNUB_SUB_KEY}/${channel}/0/${this.lastTimeToken}`;
-        const res = await fetch(url);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && Array.isArray(data[0]) && data[0].length > 0) {
-            this.lastTimeToken = data[1] || this.lastTimeToken;
-            data[0].forEach(msg => this.handleCloudPayload(msg));
-          }
-        }
+        client.on('error', () => {
+          client.end();
+          this.client = null;
+          brokerIndex = (brokerIndex + 1) % BROKER_URLS.length;
+        });
       } catch (e) {
-        // ignore
+        console.warn('MQTT connect error:', e);
       }
     };
 
-    this.pollInterval = setInterval(pollFallback, 1500);
+    tryConnect();
   }
 
   // 1. ODA OLUŞTUR (Host)
@@ -209,7 +193,7 @@ class RoomManager {
       inGameState: initialInGameState
     };
 
-    this.publishToCloud(this.roomCode, payload);
+    this.publishToCloud(this.roomCode, payload, true);
     this.notifyListeners(this.roomCode, payload);
   }
 
@@ -264,7 +248,7 @@ class RoomManager {
         }
       };
 
-      this.publishToCloud(this.roomCode, statePayload);
+      this.publishToCloud(this.roomCode, statePayload, true);
       this.notifyListeners(this.roomCode, statePayload);
     }
 
@@ -329,28 +313,19 @@ class RoomManager {
     }
   }
 
-  // PubNub Üzerinden Yayın Yap (Çift Motorlu: WebSocket + HTTP POST REST)
-  async publishToCloud(code, payload) {
+  // Bulut Sunucuya Mesaj Yayınla (Broker üzerinden)
+  publishToCloud(code, payload, retain = false) {
     if (!code || !payload) return;
-    const channel = `defuse_bomb_room_${code}`;
+    const topic = `defuse_bomb/room/${code}`;
+    const dataStr = JSON.stringify(payload);
 
-    // 1. PubNub SDK (WebSocket)
-    const pb = this.getPubNubInstance();
-    if (pb) {
+    if (this.client && this.client.connected) {
       try {
-        pb.publish({ channel: channel, message: payload });
-      } catch (e) {}
+        this.client.publish(topic, dataStr, { qos: 0, retain });
+      } catch (e) {
+        // ignore
+      }
     }
-
-    // 2. PubNub REST API (HTTP POST - Çifte Güvenlik)
-    try {
-      const url = `https://ps.pubnub.com/publish/${PUBNUB_PUB_KEY}/${PUBNUB_SUB_KEY}/0/${channel}/0`;
-      fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }).catch(() => {});
-    } catch (e) {}
   }
 
   subscribe(roomCode, callback) {
