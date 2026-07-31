@@ -3,7 +3,7 @@ import { GameProvider, useGame } from './context/GameContext';
 import Lobby from './components/Lobby';
 import QuestionCard from './components/QuestionCard';
 import MiniGameCard from './components/MiniGameCard';
-import ChaosWheelModal from './components/ChaosWheelModal';
+import Leaderboard from './components/Leaderboard';
 import PlayerHand from './components/PlayerHand';
 import GameLogs from './components/GameLogs';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -19,8 +19,6 @@ function GameBoard() {
     wires, 
     wireEffect, 
     currentQuestion, 
-    showChaosWheel, 
-    applyChaosEvent,
     handleMiniGameResult 
   } = useGame();
 
@@ -90,17 +88,11 @@ function GameBoard() {
   return (
     <div className="modern-arena-wrapper">
       
-      {/* 🎡 1. KAOS ÇARKI MODALI (HER 3 TURDA BİR) */}
-      <ChaosWheelModal
-        isVisible={showChaosWheel}
-        onComplete={applyChaosEvent}
-      />
-
-      {/* 🚀 2. ÜST BÖLÜM: HEADER VE SIRA BANNERİ */}
-      <div style={{ width: '100%', maxWidth: '800px', margin: '0 auto 16px auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      {/* 🚀 1. ÜST BÖLÜM: LOGO VE SIRA BANNERİ */}
+      <div style={{ width: '100%', maxWidth: '800px', margin: '0 auto 12px auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         
         {/* LOGO VE AKTİF OYUNCU DUYURUSU */}
-        <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+        <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
           <h2 style={{ margin: 0, fontSize: '20px', color: '#ef4444', letterSpacing: '2px', textShadow: '0 0 15px rgba(239,68,68,0.6)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             💣 DEFUSE THE BOMB 3D
           </h2>
@@ -129,51 +121,11 @@ function GameBoard() {
           </motion.div>
         </div>
 
-        {/* OYUNCULAR SIRASI */}
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', width: '100%', flexWrap: 'wrap' }}>
-          {players.map((p, idx) => {
-            const isTurn = idx === turnIndex;
-            return (
-              <div
-                key={p.id}
-                className={isTurn ? 'active-turn-ring' : ''}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  padding: '10px 16px',
-                  borderRadius: '16px',
-                  background: isTurn ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.35), #0f172a)' : '#0f172a',
-                  border: isTurn ? '2.5px solid #f59e0b' : '1.5px solid rgba(255,255,255,0.12)',
-                  boxShadow: isTurn ? '0 0 25px rgba(245, 158, 11, 0.6)' : 'none',
-                  opacity: p.lives <= 0 ? 0.3 : 1,
-                  transition: 'all 0.25s ease'
-                }}
-              >
-                <span style={{ fontSize: '26px' }}>{p.avatar?.icon}</span>
-                <div>
-                  <div style={{ fontSize: '13px', fontWeight: 'bold', color: isTurn ? '#fde047' : '#f8fafc' }}>
-                    {p.name} {isTurn ? '💣' : ''}
-                  </div>
-                  <div style={{ fontSize: '12px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                    {Array.from({ length: 3 }).map((_, i) => (
-                      <span key={i} style={{ opacity: i < p.lives ? 1 : 0.2, filter: i < p.lives ? 'drop-shadow(0 0 4px #ef4444)' : 'none' }}>
-                        ❤️
-                      </span>
-                    ))}
-                    <span style={{ fontSize: '10px', color: '#ef4444', fontWeight: 'bold', marginLeft: '4px' }}>
-                      ({p.lives}/3)
-                    </span>
-                  </div>
-                </div>
-                {p.hasShield && <Shield size={14} color="#3b82f6" />}
-              </div>
-            );
-          })}
-        </div>
+        {/* 🏆 CANLI MAÇ SIRALAMA TABLOSU (1., 2., 3., 4.) */}
+        <Leaderboard />
       </div>
 
-      {/* 💣 3. ORTA BÖLÜM: BÜYÜK BOMBA + KABLO EFEKTİ + GÖRSEL KABLOLAR + SORU / MİNİ OYUN */}
+      {/* 💣 2. ORTA BÖLÜM: BÜYÜK BOMBA + KABLO EFEKTİ + GÖRSEL KABLOLAR + SORU / MİNİ OYUN */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', maxWidth: '700px', margin: '0 auto', position: 'relative' }}>
         
         {/* KABLO KESİLME DURUM BANNERİ */}
@@ -212,16 +164,16 @@ function GameBoard() {
 
         {/* PARLAYAN CANLI BOMBA */}
         <motion.div
-          animate={{ scale: timeLeft <= 3 ? [1, 1.2, 1] : [1, 1.05, 1] }}
-          transition={{ repeat: Infinity, duration: timeLeft <= 3 ? 0.35 : 2 }}
+          animate={{ scale: timeLeft <= 5 ? [1, 1.2, 1] : [1, 1.05, 1] }}
+          transition={{ repeat: Infinity, duration: timeLeft <= 5 ? 0.35 : 2 }}
           style={{
             position: 'relative',
             width: '135px',
             height: '135px',
             borderRadius: '50%',
             background: '#0f172a',
-            border: `4px solid ${timeLeft <= 3 ? '#ff0055' : '#ef4444'}`,
-            boxShadow: `0 0 60px ${timeLeft <= 3 ? '#ff0055' : '#ef4444'}`,
+            border: `4px solid ${timeLeft <= 5 ? '#ff0055' : '#ef4444'}`,
+            boxShadow: `0 0 60px ${timeLeft <= 5 ? '#ff0055' : '#ef4444'}`,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -276,7 +228,7 @@ function GameBoard() {
         )}
       </div>
 
-      {/* 🎴 4. ALT BÖLÜM: SİZİN LÜKS AKSİYON KARTLARINIZ */}
+      {/* 🎴 3. ALT BÖLÜM: SİZİN LÜKS AKSİYON KARTLARINIZ */}
       <PlayerHand />
 
     </div>

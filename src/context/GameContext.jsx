@@ -41,22 +41,16 @@ export function GameProvider({ children }) {
   const [gameState, setGameState] = useState('LOBBY');
   const [turnIndex, setTurnIndex] = useState(0); 
   const [turnDirection, setTurnDirection] = useState(1); 
-  
-  // TEK VE ORTAK CANLI BOMBA GERİ SAYIM SÜRESİ (60 SANİYE KESİNTİSİZ)
   const [timeLeft, setTimeLeft] = useState(60);
 
   const [lastPlayedCard, setLastPlayedCard] = useState(null);
   const [wireEffect, setWireEffect] = useState(null);
 
-  const [turnCount, setTurnCount] = useState(0);
-  const [showChaosWheel, setShowChaosWheel] = useState(false);
-  const [doubleWireCutNext, setDoubleWireCutNext] = useState(false);
-
   const [players, setPlayers] = useState([
-    { id: 0, name: 'Çılgın Maymun', avatar: AVATARS[0], lives: 3, hand: [], hasShield: false, isBot: false },
-    { id: 1, name: 'Cyber Robot 🤖', avatar: AVATARS[1], lives: 3, hand: [], hasShield: false, isBot: true },
-    { id: 2, name: 'Ninja Kedi 🐱', avatar: AVATARS[2], lives: 3, hand: [], hasShield: false, isBot: true },
-    { id: 3, name: 'Hacker Tilki 🦊', avatar: AVATARS[3], lives: 3, hand: [], hasShield: false, isBot: true }
+    { id: 0, name: 'Çılgın Maymun', avatar: AVATARS[0], lives: 3, score: 0, hand: [], hasShield: false, isBot: false },
+    { id: 1, name: 'Cyber Robot 🤖', avatar: AVATARS[1], lives: 3, score: 0, hand: [], hasShield: false, isBot: true },
+    { id: 2, name: 'Ninja Kedi 🐱', avatar: AVATARS[2], lives: 3, score: 0, hand: [], hasShield: false, isBot: true },
+    { id: 3, name: 'Hacker Tilki 🦊', avatar: AVATARS[3], lives: 3, score: 0, hand: [], hasShield: false, isBot: true }
   ]);
 
   const [wires, setWires] = useState([
@@ -86,10 +80,7 @@ export function GameProvider({ children }) {
     setGameState('PLAYING');
     setTurnIndex(0);
     setTurnDirection(1);
-    setTimeLeft(60); // TEK VE ORTAK BOMBA SÜRESİ 60 SANİYE KESİNTİSİZ!
-    setTurnCount(0);
-    setShowChaosWheel(false);
-    setDoubleWireCutNext(false);
+    setTimeLeft(60);
     setUsedQuestionIds([]);
     setLastPlayedCard(null);
     setWireEffect(null);
@@ -106,6 +97,7 @@ export function GameProvider({ children }) {
         name: config.name?.trim() !== '' ? config.name : defaultNames[idx % defaultNames.length],
         avatar: config.avatar || AVATARS[idx % AVATARS.length],
         lives: 3,
+        score: 0,
         hand: [card1, card2],
         hasShield: false,
         isBot: idx !== 0
@@ -114,7 +106,7 @@ export function GameProvider({ children }) {
 
     setPlayers(newPlayers);
     pickNewQuestion();
-    addLog(`💣 TEK BÜYÜK BOMBA BAŞLADI! Ortak Süre: 60 Saniye!`);
+    addLog(`💣 Oyun Başladı! Ortak Süre: 60 Saniye!`);
   };
 
   const resetWires = () => {
@@ -146,13 +138,13 @@ export function GameProvider({ children }) {
   // BOT OYUNCU HAMLE ENGINE
   useEffect(() => {
     let botTimer;
-    if (gameState === 'PLAYING' && players[turnIndex]?.isBot && !showChaosWheel) {
+    if (gameState === 'PLAYING' && players[turnIndex]?.isBot) {
       botTimer = setTimeout(() => {
         const bot = players[turnIndex];
         const aliveRivals = players.filter((p, idx) => idx !== turnIndex && p.lives > 0);
         const randomTarget = aliveRivals[Math.floor(Math.random() * aliveRivals.length)];
 
-        if (bot.hand.length > 0 && Math.random() < 0.45) {
+        if (bot.hand.length > 0 && Math.random() < 0.4) {
           const cardToPlay = bot.hand[Math.floor(Math.random() * bot.hand.length)];
           playCard(cardToPlay, randomTarget);
           return;
@@ -169,12 +161,12 @@ export function GameProvider({ children }) {
     }
 
     return () => clearTimeout(botTimer);
-  }, [gameState, turnIndex, currentQuestion, showChaosWheel]);
+  }, [gameState, turnIndex, currentQuestion]);
 
-  // ORTAK BOMBA GERİ SAYIMI (KESİNTİSİZ TÜM MASAYI ETKİLER)
+  // ORTAK BOMBA GERİ SAYIMI
   useEffect(() => {
     let timerId;
-    if (gameState === 'PLAYING' && timeLeft > 0 && !showChaosWheel) {
+    if (gameState === 'PLAYING' && timeLeft > 0) {
       timerId = setInterval(() => {
         setTimeLeft(prev => {
           if (prev <= 1) {
@@ -187,7 +179,7 @@ export function GameProvider({ children }) {
       }, 1000);
     }
     return () => clearInterval(timerId);
-  }, [gameState, timeLeft, showChaosWheel]);
+  }, [gameState, timeLeft]);
 
   const handleTimeOut = () => {
     addLog(`⏰ ORTAK SÜRE BİTTİ! Bomba ${players[turnIndex].name}'in elinde patladı!`);
@@ -201,58 +193,9 @@ export function GameProvider({ children }) {
       nextIdx = (nextIdx + turnDirection + total) % total;
     }
     
-    const newTurnCount = turnCount + 1;
-    setTurnCount(newTurnCount);
     setTurnIndex(nextIdx);
-
-    if (newTurnCount % 3 === 0) {
-      setShowChaosWheel(true);
-    } else {
-      pickNewQuestion();
-    }
-    addLog(`👉 SIRA: ${players[nextIdx].name}'TA!`);
-  };
-
-  const applyChaosEvent = (event) => {
-    setShowChaosWheel(false);
-    if (!event) {
-      pickNewQuestion();
-      return;
-    }
-
-    switch (event.id) {
-      case 'SWAP_LIVES': {
-        const sorted = [...players].sort((a, b) => b.lives - a.lives);
-        const highestId = sorted[0].id;
-        const lowestId = sorted[sorted.length - 1].id;
-        if (highestId !== lowestId) {
-          const highLives = players[highestId].lives;
-          const lowLives = players[lowestId].lives;
-          setPlayers(prev => prev.map(p => {
-            if (p.id === highestId) return { ...p, lives: lowLives };
-            if (p.id === lowestId) return { ...p, lives: highLives };
-            return p;
-          }));
-          addLog(`🔄 ${players[highestId].name} ve ${players[lowestId].name} CANLARI TAKAS ETTİ!`);
-        }
-        break;
-      }
-      case 'SPEED_TURNS':
-        setTimeLeft(5);
-        addLog(`⚡ KAOS: Ortak Bomba Süresi 5 Saniyeye Düşürüldü!`);
-        break;
-      case 'CARD_RAIN':
-        setPlayers(prev => prev.map(p => ({ ...p, hand: [...p.hand, getRandomCard(p.hand)] })));
-        addLog(`🎁 KAOS: Herkese +1 Ekstra Aksiyon Kartı Dağıtıldı!`);
-        break;
-      case 'DOUBLE_WIRE':
-        setDoubleWireCutNext(true);
-        addLog(`💥 KAOS: Sıradaki yanlış cevapta 2 kablo kesilecek!`);
-        break;
-      default:
-        break;
-    }
     pickNewQuestion();
+    addLog(`👉 SIRA: ${players[nextIdx].name}'TA!`);
   };
 
   const answerQuestion = (optionIndex) => {
@@ -260,7 +203,9 @@ export function GameProvider({ children }) {
 
     if (optionIndex === currentQuestion.correct) {
       sounds.playBeep(1200, 0.1);
-      addLog(`✅ ${players[turnIndex].name} doğru bildi! Bomba paslandı.`);
+      // Puan ekle
+      setPlayers(prev => prev.map((p, idx) => idx === turnIndex ? { ...p, score: p.score + 10 } : p));
+      addLog(`✅ ${players[turnIndex].name} doğru bildi! (+10 Puan)`);
       passTurn();
     } else {
       addLog(`❌ Yanlış cevap! Kablo kesiliyor...`);
@@ -271,7 +216,8 @@ export function GameProvider({ children }) {
   const handleMiniGameResult = (isSuccess) => {
     if (isSuccess) {
       sounds.playBeep(1400, 0.15);
-      addLog(`🎯 MİNİ OYUN BAŞARILI! Bomba imha edildi.`);
+      setPlayers(prev => prev.map((p, idx) => idx === turnIndex ? { ...p, score: p.score + 15 } : p));
+      addLog(`🎯 MİNİ OYUN BAŞARILI! (+15 Puan)`);
       passTurn();
     } else {
       addLog(`💥 MİNİ OYUN BAŞARISIZ! Kablo kesiliyor...`);
@@ -308,7 +254,7 @@ export function GameProvider({ children }) {
         addLog(`🛡️ KALKAN KORUDU! ${players[victimIdx].name} kurtuldu!`);
         setPlayers(prev => prev.map((p, idx) => idx === victimIdx ? { ...p, hasShield: false } : p));
         resetWires();
-        setTimeLeft(60); // Bomba patlamasında ortak süre sıfırlanır!
+        setTimeLeft(60);
         passTurn();
       } else {
         triggerExplosionForPlayer(victimIdx);
@@ -335,7 +281,7 @@ export function GameProvider({ children }) {
       addLog(`🏆 ŞAMPİYON: ${alivePlayers[0].name}! 🎉`);
     } else {
       resetWires();
-      setTimeLeft(60); // Yeni turda ortak süre sıfırlanır!
+      setTimeLeft(60);
       passTurn();
     }
   };
@@ -438,11 +384,9 @@ export function GameProvider({ children }) {
         logs,
         lastPlayedCard,
         wireEffect,
-        showChaosWheel,
         startGame,
         answerQuestion,
         handleMiniGameResult,
-        applyChaosEvent,
         playCard
       }}
     >
