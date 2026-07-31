@@ -13,7 +13,6 @@ export const AVATARS = [
   { id: 'bear', name: 'Gamer Ayı', icon: '🐻', color: '#8b5cf6' }
 ];
 
-// 50+ ZENGİN VE ÇEŞİTLİ SORU HAVUZU
 const QUESTION_BANK = [
   { id: 1, question: "İçinde 'A' harfi bulunmayan şehir hangisidir?", options: ["İzmir", "Ankara", "Bursa", "Adana"], correct: 0 },
   { id: 2, question: "Hangisi bir çizgi film karakteri DEĞİLDİR?", options: ["SüngerBob", "Pikachu", "Einstein", "Bugs Bunny"], correct: 2 },
@@ -64,9 +63,9 @@ export function GameProvider({ children }) {
 
   const [players, setPlayers] = useState([
     { id: 0, name: 'Çılgın Maymun', avatar: AVATARS[0], lives: 3, score: 0, hand: [], hasShield: false, isBot: false },
-    { id: 1, name: 'Cyber Robot 🤖', avatar: AVATARS[1], lives: 3, score: 0, hand: [], hasShield: false, isBot: true },
-    { id: 2, name: 'Ninja Kedi 🐱', avatar: AVATARS[2], lives: 3, score: 0, hand: [], hasShield: false, isBot: true },
-    { id: 3, name: 'Hacker Tilki 🦊', avatar: AVATARS[3], lives: 3, score: 0, hand: [], hasShield: false, isBot: true }
+    { id: 1, name: 'Cyber Robot', avatar: AVATARS[1], lives: 3, score: 0, hand: [], hasShield: false, isBot: false },
+    { id: 2, name: 'Ninja Kedi', avatar: AVATARS[2], lives: 3, score: 0, hand: [], hasShield: false, isBot: false },
+    { id: 3, name: 'Hacker Tilki', avatar: AVATARS[3], lives: 3, score: 0, hand: [], hasShield: false, isBot: false }
   ]);
 
   const [wires, setWires] = useState([
@@ -103,7 +102,7 @@ export function GameProvider({ children }) {
 
     resetWires();
 
-    const defaultNames = ['Çılgın Maymun', 'Cyber Robot 🤖', 'Ninja Kedi 🐱', 'Hacker Tilki 🦊', 'Uzaylı Alien 👽', 'Gamer Ayı 🐻'];
+    const defaultNames = ['Çılgın Maymun', 'Cyber Robot', 'Ninja Kedi', 'Hacker Tilki', 'Uzaylı Alien', 'Gamer Ayı'];
 
     const newPlayers = customPlayerConfigs.map((config, idx) => {
       const card1 = getRandomCard([]);
@@ -116,7 +115,7 @@ export function GameProvider({ children }) {
         score: 0,
         hand: [card1, card2],
         hasShield: false,
-        isBot: idx !== 0
+        isBot: false // Botlar Tamamen Kaldırıldı!
       };
     });
 
@@ -136,7 +135,6 @@ export function GameProvider({ children }) {
     ]);
   };
 
-  // KARA LİSTELİ RASTGELE SORU SEÇİMİ (TEKRAR ETMEYEN SORULAR)
   const pickNewQuestion = () => {
     let availableQuestions = QUESTION_BANK.filter(q => !usedQuestionIds.includes(q.id));
     if (availableQuestions.length === 0) {
@@ -151,34 +149,6 @@ export function GameProvider({ children }) {
   const addLog = (msg) => {
     setLogs(prev => [msg, ...prev.slice(0, 3)]);
   };
-
-  // BOT OYUNCU HAMLE ENGINE
-  useEffect(() => {
-    let botTimer;
-    if (gameState === 'PLAYING' && players[turnIndex]?.isBot) {
-      botTimer = setTimeout(() => {
-        const bot = players[turnIndex];
-        const aliveRivals = players.filter((p, idx) => idx !== turnIndex && p.lives > 0);
-        const randomTarget = aliveRivals[Math.floor(Math.random() * aliveRivals.length)];
-
-        if (bot.hand.length > 0 && Math.random() < 0.4) {
-          const cardToPlay = bot.hand[Math.floor(Math.random() * bot.hand.length)];
-          playCard(cardToPlay, randomTarget);
-          return;
-        }
-
-        if (currentQuestion?.isMiniGame) {
-          handleMiniGameResult(Math.random() < 0.85);
-        } else if (currentQuestion?.options) {
-          const isCorrect = Math.random() < 0.85;
-          const choice = isCorrect ? currentQuestion.correct : (currentQuestion.correct + 1) % 4;
-          answerQuestion(choice);
-        }
-      }, 1200);
-    }
-
-    return () => clearTimeout(botTimer);
-  }, [gameState, turnIndex, currentQuestion]);
 
   // ORTAK BOMBA GERİ SAYIMI
   useEffect(() => {
