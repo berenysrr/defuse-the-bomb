@@ -1,4 +1,4 @@
-// Gerçek Zamanlı Yerel Ağ / Oda (Room) Senkronizasyon Motoru
+import { Peer } from 'peerjs';
 
 class RoomManager {
   constructor() {
@@ -6,6 +6,10 @@ class RoomManager {
     this.isHost = false;
     this.listeners = [];
     this.channel = null;
+    this.peer = null;
+    this.connections = []; // Host tarafi baglantilari
+    this.hostConn = null;  // Joiner tarafi host baglantisi
+    this.roomState = null;
 
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       this.channel = new BroadcastChannel('defuse_bomb_rooms');
@@ -14,7 +18,6 @@ class RoomManager {
       };
     }
 
-    // LocalStorage ile sekmeler ve yerel cihazlar arası anlık dinleme
     if (typeof window !== 'undefined') {
       window.addEventListener('storage', (event) => {
         if (event.key && event.key.startsWith('room_state_')) {
@@ -27,13 +30,13 @@ class RoomManager {
     }
   }
 
-  // 1. ODA OLUŞTUR
+  // 1. ODA OLUŞTUR (Host)
   createRoom(hostPlayerConfig) {
     const code = Math.random().toString(36).substring(2, 7).toUpperCase();
     this.roomCode = code;
     this.isHost = true;
 
-    const roomState = {
+    this.roomState = {
       code,
       hostId: hostPlayerConfig.id,
       players: [hostPlayerConfig],
@@ -41,10 +44,37 @@ class RoomManager {
       lastUpdate: Date.now()
     };
 
+    // PeerJS Global İnternet Sunucusu Bağlantısı
+    const peerId = `defuse-bomb-${code}`;
+    try {
+      this.peer = new Peer(peerId);
+
+      this.peer.on('connection', (conn) => {
+        this.connections.push(conn);
+
+        conn.on('data', (data) => {
+          if (data.type === 'JOIN_REQUEST' && data.player) {
+            // Katılan yeni oyuncuyu oda listesine ekle
+            const exists = this.roomState.players.some(p => p.id === data.player.id || p.name === data.player.name);
+            if (!exists) {
+              this.roomState.players.push(data.player);
+            }
+            this.broadcastRoomState();
+          }
+        });
+
+        conn.on('open', () => {
+          conn.send({ type: 'STATE_UPDATE', roomCode: code, state: this.roomState });
+        });
+      });
+    } catch (e) {
+      console.warn('PeerJS init fallback:', e);
+    }
+
     const payload = {
       type: 'STATE_UPDATE',
       roomCode: code,
-      state: roomState,
+      state: this.roomState,
       lastUpdate: Date.now()
     };
 
@@ -52,21 +82,40 @@ class RoomManager {
     return code;
   }
 
-  // 2. ODAYA KATIL
+  // 2. ODAYA KATIL (Joiner)
   joinRoom(code, playerConfig) {
     const cleanCode = code.toUpperCase();
     this.roomCode = cleanCode;
     this.isHost = false;
 
-    // Var olan oda verisini al
+    const peerId = `defuse-bomb-joiner-${Date.now()}`;
+    try {
+      this.peer = new Peer(peerId);
+
+      this.peer.on('open', () => {
+        const hostPeerId = `defuse-bomb-${cleanCode}`;
+        const conn = this.peer.connect(hostPeerId);
+        this.hostConn = conn;
+
+        conn.on('open', () => {
+          conn.send({ type: 'JOIN_REQUEST', roomCode: cleanCode, player: playerConfig });
+        });
+
+        conn.on('data', (data) => {
+          this.handleMessage(data);
+        });
+      });
+    } catch (e) {
+      console.warn('PeerJS join fallback:', e);
+    }
+
     let roomState = this.getRoomState(cleanCode) || {
       code: cleanCode,
-      players: [],
+      players: [playerConfig],
       gameState: 'LOBBY',
       lastUpdate: Date.now()
     };
 
-    // Oyuncu daha önce eklenmediyse listeye ekle
     const exists = roomState.players.some(p => p.name === playerConfig.name || p.id === playerConfig.id);
     if (!exists) {
       roomState.players.push(playerConfig);
@@ -81,6 +130,47 @@ class RoomManager {
 
     this.saveAndBroadcast(payload);
     return roomState;
+  }
+
+  // Host Oyunu Başlattığında Tüm Cihazlara Bildir
+  startGameBroadcast(players) {
+    if (this.roomState) {
+      this.roomState.gameState = 'PLAYING';
+      this.roomState.players = players;
+    }
+
+    const payload = {
+      type: 'GAME_START',
+      roomCode: this.roomCode,
+      players: players,
+      lastUpdate: Date.now()
+    };
+
+    this.saveAndBroadcast(payload);
+
+    // PeerJS üzerinden tüm katılımcılara gönder
+    this.connections.forEach(conn => {
+      if (conn.open) {
+        conn.send(payload);
+      }
+    });
+  }
+
+  broadcastRoomState() {
+    const payload = {
+      type: 'STATE_UPDATE',
+      roomCode: this.roomCode,
+      state: this.roomState,
+      lastUpdate: Date.now()
+    };
+
+    this.saveAndBroadcast(payload);
+
+    this.connections.forEach(conn => {
+      if (conn.open) {
+        conn.send(payload);
+      }
+    });
   }
 
   getRoomState(code) {
@@ -107,6 +197,9 @@ class RoomManager {
 
   handleMessage(data) {
     if (!data || data.roomCode !== this.roomCode) return;
+    if (data.type === 'STATE_UPDATE' && data.state) {
+      this.roomState = data.state;
+    }
     this.notifyListeners(data);
   }
 

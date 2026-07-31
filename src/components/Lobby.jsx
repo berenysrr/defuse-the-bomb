@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useGame, AVATARS } from '../context/GameContext';
 import { roomManager } from '../utils/multiplayer';
-import { Bomb, Users, Play, HelpCircle, Copy, Check, Globe } from 'lucide-react';
+import { Bomb, Users, Play, HelpCircle, Copy, Check, Globe, Loader } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Lobby() {
@@ -17,6 +17,7 @@ export default function Lobby() {
   const [roomCode, setRoomCode] = useState('');
   const [inputCode, setInputCode] = useState('');
   const [joinedPlayers, setJoinedPlayers] = useState([]);
+  const [isHost, setIsHost] = useState(false);
   
   // Oyuncu Profil Bilgileri
   const [myName, setMyName] = useState('');
@@ -40,13 +41,21 @@ export default function Lobby() {
     }
   }, []);
 
-  // GERÇEK ZAMANLI ODA CANLI DİNLEYİCİSİ (MULTİPLAYER REAL-TIME SYNC)
+  // GERÇEK ZAMANLI KÜRESEL ODA DİNLEYİCİSİ (PEERJS & MULTIPLAYER SYNC)
   useEffect(() => {
     const unsubscribe = roomManager.subscribe((payload) => {
-      if (payload && payload.type === 'STATE_UPDATE' && payload.state) {
+      if (!payload) return;
+
+      // 1. Oda durumu güncellendiğinde oyuncu listesini yenile
+      if (payload.type === 'STATE_UPDATE' && payload.state) {
         if (payload.state.players && payload.state.players.length > 0) {
           setJoinedPlayers(payload.state.players);
         }
+      }
+
+      // 2. Oda kurucusu oyunu başlattığında tüm cihazlarda maçı başlat!
+      if (payload.type === 'GAME_START' && payload.players) {
+        startGame(payload.players);
       }
     });
 
@@ -74,6 +83,7 @@ export default function Lobby() {
     };
     const code = roomManager.createRoom(hostPlayer);
     setRoomCode(code);
+    setIsHost(true);
     setJoinedPlayers([hostPlayer]);
     setMode('ROOM_WAIT');
   };
@@ -88,6 +98,7 @@ export default function Lobby() {
     };
     const roomState = roomManager.joinRoom(inputCode, joinerPlayer);
     setRoomCode(inputCode);
+    setIsHost(false);
     if (roomState && roomState.players) {
       setJoinedPlayers(roomState.players);
     } else {
@@ -111,8 +122,10 @@ export default function Lobby() {
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
+  // Oyunu Başlat
   const handleStartGame = () => {
     if (mode === 'ROOM_WAIT') {
+      roomManager.startGameBroadcast(joinedPlayers);
       startGame(joinedPlayers);
     } else {
       startGame(localConfigs);
@@ -326,7 +339,6 @@ export default function Lobby() {
 
           {/* 2 AYRI KOPYALAMA BUTONU */}
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '24px', flexWrap: 'wrap' }}>
-            {/* 1. Sadece Oda Kodunu Kopyala */}
             <button
               onClick={copyOnlyCode}
               style={{
@@ -347,7 +359,6 @@ export default function Lobby() {
               {copiedCode ? 'KOD KOPYALANDI!' : '📋 SADECE ODA KODUNU KOPYALA'}
             </button>
 
-            {/* 2. Davet Linkini Kopyala */}
             <button
               onClick={copyFullLink}
               style={{
@@ -375,13 +386,22 @@ export default function Lobby() {
               <div key={p.id || idx} style={{ background: '#1e293b', padding: '10px 20px', borderRadius: '14px', border: '1.5px solid #334155', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
                 <span style={{ fontSize: '26px' }}>{p.avatar?.icon}</span>
                 <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#fff' }}>{p.name}</span>
+                {idx === 0 && <span style={{ fontSize: '10px', background: '#f59e0b', color: '#000', padding: '2px 6px', borderRadius: '6px', fontWeight: 'bold' }}>HOST</span>}
               </div>
             ))}
           </div>
 
-          <button onClick={handleStartGame} style={{ width: '100%', padding: '16px', background: 'linear-gradient(135deg, #ef4444, #b91c1c)', color: '#fff', fontWeight: 'bold', fontSize: '18px', border: 'none', borderRadius: '14px', cursor: 'pointer', boxShadow: '0 10px 25px rgba(239, 68, 68, 0.5)' }}>
-            🎮 OYUNU BAŞLAT!
-          </button>
+          {/* SADECE ODA KURUCUSUNA (HOST) OYUNU BAŞLAT BUTONU VER! KATILIMCILARA BEKLEME BANNERİ GÖSTER */}
+          {isHost ? (
+            <button onClick={handleStartGame} style={{ width: '100%', padding: '16px', background: 'linear-gradient(135deg, #ef4444, #b91c1c)', color: '#fff', fontWeight: 'bold', fontSize: '18px', border: 'none', borderRadius: '14px', cursor: 'pointer', boxShadow: '0 10px 25px rgba(239, 68, 68, 0.5)' }}>
+              🎮 OYUNU BAŞLAT! (HOST)
+            </button>
+          ) : (
+            <div style={{ padding: '16px', borderRadius: '14px', background: 'rgba(6, 182, 212, 0.15)', border: '1.5px solid #06b6d4', color: '#67e8f9', fontWeight: 'bold', fontSize: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+              <Loader size={20} className="spin" />
+              <span>⏳ ODA KURUCUSUNUN (HOST) OYUNU BAŞLATMASI BEKLENİYOR...</span>
+            </div>
+          )}
         </div>
       )}
 
