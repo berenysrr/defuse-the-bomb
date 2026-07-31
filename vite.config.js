@@ -5,6 +5,10 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   base: './', // Göreceli yolları destekleyerek tüm sunucularda hatasız çalışmasını sağlar
   plugins: [react()],
+  define: {
+    global: 'window',
+    'process.env': {}
+  },
   server: {
     host: true,
     port: 3000
