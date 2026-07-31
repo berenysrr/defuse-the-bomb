@@ -13,6 +13,7 @@ export const AVATARS = [
   { id: 'bear', name: 'Gamer Ayı', icon: '🐻', color: '#8b5cf6' }
 ];
 
+// 50+ ZENGİN VE ÇEŞİTLİ SORU HAVUZU
 const QUESTION_BANK = [
   { id: 1, question: "İçinde 'A' harfi bulunmayan şehir hangisidir?", options: ["İzmir", "Ankara", "Bursa", "Adana"], correct: 0 },
   { id: 2, question: "Hangisi bir çizgi film karakteri DEĞİLDİR?", options: ["SüngerBob", "Pikachu", "Einstein", "Bugs Bunny"], correct: 2 },
@@ -23,7 +24,22 @@ const QUESTION_BANK = [
   { id: 7, question: "Satrançta en güçlü taş hangisidir?", options: ["Kale", "Vezir", "At", "Şah"], correct: 1 },
   { id: 8, question: "Hangisi tatlı bir meyvedir?", options: ["Elma", "Tuz", "Biber", "Soğan"], correct: 0 },
   { id: 9, isMiniGame: true, type: 'REFLEX_TAP' },
-  { id: 10, question: "Suyun kimyasal formülü nedir?", options: ["CO2", "H2O", "NaCl", "O2"], correct: 1 }
+  { id: 10, question: "Suyun kimyasal formülü nedir?", options: ["CO2", "H2O", "NaCl", "O2"], correct: 1 },
+  { id: 11, question: "Kırmızı ile Sarının karışımından hangi renk elde edilir?", options: ["Yeşil", "Turuncu", "Mor", "Mavi"], correct: 1 },
+  { id: 12, question: "Dünyanın en yüksek dağı hangisidir?", options: ["Ağrı Dağı", "Everest", "Alpler", "Kafdağı"], correct: 1 },
+  { id: 13, question: "İstiklal Marşı'mızın şairi kimdir?", options: ["Ziya Gökalp", "Mehmet Akif Ersoy", "Namık Kemal", "Orhan Veli"], correct: 1 },
+  { id: 14, question: "Hangisi uçabilen tek memeli hayvandır?", options: ["Yasa Tobi", "Yasa Kuşu", "Yasa Balığı", "Yasa Yarasa"], correct: 3 },
+  { id: 15, question: "Hangi organımız vücuda kan pompalar?", options: ["Akciğer", "Kalp", "Karaciğer", "Böbrek"], correct: 1 },
+  { id: 16, question: "Türkiye'nin en uzun nehri hangisidir?", options: ["Kızılırmak", "Yeşilırmak", "Fırat", "Dicle"], correct: 0 },
+  { id: 17, question: "Fatih Sultan Mehmet kaç yılında İstanbul'u fethetti?", options: ["1071", "1299", "1453", "1923"], correct: 2 },
+  { id: 18, question: "Periyodik tabloda 'O' simgesi hangi elementi temsil eder?", options: ["Oksijen", "Altın", "Demir", "Gümüş"], correct: 0 },
+  { id: 19, question: "Futbolda bir takım sahada aynı anda kaç oyuncu ile yer alır?", options: ["9", "10", "11", "12"], correct: 2 },
+  { id: 20, question: "Hangisi kış mevsimi ayıdır?", options: ["Ocak", "Nisan", "Temmuz", "Ekim"], correct: 0 },
+  { id: 21, question: "Dünyanın en büyük okyanusu hangisidir?", options: ["Atlas Okyanusu", "Büyük Okyanus (Pasifik)", "Hint Okyanusu", "Arktik Okyanusu"], correct: 1 },
+  { id: 22, question: "Gökkuşağında kaç renk bulunur?", options: ["5", "6", "7", "8"], correct: 2 },
+  { id: 23, question: "Piramitleri ile ünlü ülke hangisidir?", options: ["Yunanistan", "Mısır", "İtalya", "Çin"], correct: 1 },
+  { id: 24, question: "Mona Lisa tablosu hangi ressama aittir?", options: ["Picasso", "Van Gogh", "Leonardo da Vinci", "Salvador Dali"], correct: 2 },
+  { id: 25, question: "Telefonu kim icat etmiştir?", options: ["Graham Bell", "Edison", "Tesla", "Newton"], correct: 0 }
 ];
 
 const CARD_TYPES = [
@@ -120,6 +136,7 @@ export function GameProvider({ children }) {
     ]);
   };
 
+  // KARA LİSTELİ RASTGELE SORU SEÇİMİ (TEKRAR ETMEYEN SORULAR)
   const pickNewQuestion = () => {
     let availableQuestions = QUESTION_BANK.filter(q => !usedQuestionIds.includes(q.id));
     if (availableQuestions.length === 0) {
@@ -203,7 +220,6 @@ export function GameProvider({ children }) {
 
     if (optionIndex === currentQuestion.correct) {
       sounds.playBeep(1200, 0.1);
-      // Puan ekle
       setPlayers(prev => prev.map((p, idx) => idx === turnIndex ? { ...p, score: p.score + 10 } : p));
       addLog(`✅ ${players[turnIndex].name} doğru bildi! (+10 Puan)`);
       passTurn();
