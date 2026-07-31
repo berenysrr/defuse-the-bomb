@@ -18,6 +18,7 @@ export default function Lobby() {
   const [inputCode, setInputCode] = useState('');
   const [joinedPlayers, setJoinedPlayers] = useState([]);
   const [isHost, setIsHost] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
   
   // Oyuncu Profil Bilgileri
   const [myName, setMyName] = useState('');
@@ -41,7 +42,7 @@ export default function Lobby() {
     }
   }, []);
 
-  // GERÇEK ZAMANLI KÜRESEL ODA DİNLEYİCİSİ (PUBSUB REAL-TIME SYNC)
+  // GERÇEK ZAMANLI KÜRESEL ODA DİNLEYİCİSİ (FIREBASE CLOUD RELAY)
   useEffect(() => {
     const unsubscribe = roomManager.subscribe((payload) => {
       if (!payload) return;
@@ -75,35 +76,39 @@ export default function Lobby() {
   };
 
   // ODA OLUŞTUR (Host)
-  const handleCreateRoom = () => {
+  const handleCreateRoom = async () => {
+    setIsJoining(true);
     const hostPlayer = {
       id: Date.now(),
       name: myName.trim() !== '' ? myName : 'Oda Kurucu',
       avatar: myAvatar
     };
-    const code = roomManager.createRoom(hostPlayer);
+    const code = await roomManager.createRoom(hostPlayer);
     setRoomCode(code);
     setIsHost(true);
     setJoinedPlayers([hostPlayer]);
+    setIsJoining(false);
     setMode('ROOM_WAIT');
   };
 
   // ODAYA KATIL (Joiner)
-  const handleJoinRoom = () => {
+  const handleJoinRoom = async () => {
     if (!inputCode) return;
+    setIsJoining(true);
     const joinerPlayer = {
       id: Date.now(),
       name: myName.trim() !== '' ? myName : `Misafir Oyuncu`,
       avatar: myAvatar
     };
     setIsHost(false);
-    const roomState = roomManager.joinRoom(inputCode, joinerPlayer);
+    const roomState = await roomManager.joinRoom(inputCode, joinerPlayer);
     setRoomCode(inputCode);
     if (roomState && roomState.players) {
       setJoinedPlayers(roomState.players);
     } else {
       setJoinedPlayers([joinerPlayer]);
     }
+    setIsJoining(false);
     setMode('ROOM_WAIT');
   };
 
@@ -123,9 +128,9 @@ export default function Lobby() {
   };
 
   // Oyunu Başlat
-  const handleStartGame = () => {
+  const handleStartGame = async () => {
     if (mode === 'ROOM_WAIT') {
-      roomManager.startGameBroadcast(joinedPlayers);
+      await roomManager.startGameBroadcast(joinedPlayers);
       startGame(joinedPlayers);
     } else {
       startGame(localConfigs);
@@ -273,8 +278,9 @@ export default function Lobby() {
             ))}
           </div>
 
-          <button onClick={handleCreateRoom} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #f59e0b, #b45309)', color: '#fff', fontWeight: 'bold', fontSize: '16px', border: 'none', borderRadius: '12px', cursor: 'pointer' }}>
-            ODA KODU AL VE BAŞLAT ➔
+          <button disabled={isJoining} onClick={handleCreateRoom} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #f59e0b, #b45309)', color: '#fff', fontWeight: 'bold', fontSize: '16px', border: 'none', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+            {isJoining ? <Loader size={18} className="spin" /> : null}
+            <span>ODA KODU AL VE BAŞLAT ➔</span>
           </button>
         </div>
       )}
@@ -323,8 +329,9 @@ export default function Lobby() {
             ))}
           </div>
 
-          <button onClick={handleJoinRoom} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #06b6d4, #0891b2)', color: '#fff', fontWeight: 'bold', fontSize: '16px', border: 'none', borderRadius: '12px', cursor: 'pointer' }}>
-            ODAYA KATIL ➔
+          <button disabled={isJoining} onClick={handleJoinRoom} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #06b6d4, #0891b2)', color: '#fff', fontWeight: 'bold', fontSize: '16px', border: 'none', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+            {isJoining ? <Loader size={18} className="spin" /> : null}
+            <span>ODAYA KATIL ➔</span>
           </button>
         </div>
       )}
