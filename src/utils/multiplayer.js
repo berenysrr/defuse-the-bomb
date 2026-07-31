@@ -1,18 +1,14 @@
-// GÜVENİLİR KÜRESEL GERÇEK ZAMANLI MQTT WEBSOCKET MOTORU (RETAINED STATE + QOS 1 + QUEUING FIX)
+// GÜVENİLİR PUBNUB CANLI WEBSOCKET MOTORU (ZERO NPM DEPENDENCIES - 100% BROWSER NATIVE)
 
-import mqtt from 'mqtt';
-
-const BROKER_URLS = [
-  'wss://broker.emqx.io:8084/mqtt',
-  'wss://broker.hivemq.com:8000/mqtt'
-];
+const PUBNUB_SUB_KEY = 'demo';
+const PUBNUB_PUB_KEY = 'demo';
 
 class RoomManager {
   constructor() {
     this.roomCode = null;
     this.isHost = false;
     this.listeners = new Map();
-    this.client = null;
+    this.pubnub = null;
     this.heartbeatInterval = null;
     this.myPlayerConfig = null;
 
@@ -25,21 +21,37 @@ class RoomManager {
     };
   }
 
+  getPubNubInstance() {
+    if (this.pubnub) return this.pubnub;
+
+    const PubNubClass = window.PubNub;
+    if (PubNubClass) {
+      try {
+        this.pubnub = new PubNubClass({
+          publishKey: PUBNUB_PUB_KEY,
+          subscribeKey: PUBNUB_SUB_KEY,
+          userId: 'user_' + Math.random().toString(36).substring(2, 9),
+          ssl: true
+        });
+      } catch (e) {
+        console.warn('PubNub init error:', e);
+      }
+    }
+    return this.pubnub;
+  }
+
   stopStream() {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
-    if (this.client) {
+    const pb = this.getPubNubInstance();
+    if (pb && this.roomCode) {
       try {
-        if (this.roomCode) {
-          this.client.unsubscribe(`defuse_bomb/room/${this.roomCode}`);
-        }
-        this.client.end();
+        pb.unsubscribe({ channels: [`defuse_bomb_room_${this.roomCode}`] });
       } catch (e) {
         // ignore
       }
-      this.client = null;
     }
   }
 
@@ -47,65 +59,23 @@ class RoomManager {
     this.stopStream();
     this.roomCode = code;
 
-    const topic = `defuse_bomb/room/${code}`;
+    const channel = `defuse_bomb_room_${code}`;
+    const pb = this.getPubNubInstance();
 
-    try {
-      this.client = mqtt.connect(BROKER_URLS[0], {
-        clientId: 'db_' + Math.random().toString(36).substring(2, 10),
-        keepalive: 30,
-        reconnectPeriod: 1000
-      });
-
-      this.client.on('connect', () => {
-        if (this.client) {
-          this.client.subscribe(topic, { qos: 1 });
-          
-          // Baglanildiginda mevcut oda durumunu retained olarak firlat
-          if (this.roomState && this.roomState.players.length > 0) {
-            this.publishToCloud(code, {
-              type: 'STATE_UPDATE',
-              roomCode: code,
-              state: {
-                ...this.roomState,
-                players: [...this.roomState.players]
-              }
-            }, true);
+    if (pb) {
+      try {
+        pb.removeAllListeners();
+        pb.addListener({
+          message: (evt) => {
+            if (evt && evt.message) {
+              this.handleCloudPayload(evt.message);
+            }
           }
-        }
-      });
-
-      this.client.on('message', (t, message) => {
-        try {
-          const payload = JSON.parse(message.toString());
-          this.handleCloudPayload(payload);
-        } catch (e) {
-          console.warn('MQTT message parse error:', e);
-        }
-      });
-
-      this.client.on('error', (err) => {
-        console.warn('MQTT primary broker error, retrying secondary...', err);
-        try {
-          if (this.client) this.client.end();
-          this.client = mqtt.connect(BROKER_URLS[1], {
-            clientId: 'db_fb_' + Math.random().toString(36).substring(2, 10),
-            keepalive: 30
-          });
-          this.client.on('connect', () => {
-            if (this.client) this.client.subscribe(topic, { qos: 1 });
-          });
-          this.client.on('message', (t, message) => {
-            try {
-              const payload = JSON.parse(message.toString());
-              this.handleCloudPayload(payload);
-            } catch (e) {}
-          });
-        } catch (fbErr) {
-          console.warn('Secondary broker error:', fbErr);
-        }
-      });
-    } catch (e) {
-      console.warn('MQTT connection failed:', e);
+        });
+        pb.subscribe({ channels: [channel] });
+      } catch (e) {
+        console.warn('PubNub subscribe error:', e);
+      }
     }
   }
 
@@ -133,7 +103,7 @@ class RoomManager {
         ...this.roomState,
         players: [...this.roomState.players]
       }
-    }, true);
+    });
 
     // Host Kalp Atışı: Her 1 saniyede oda durumunu yayınla
     this.heartbeatInterval = setInterval(() => {
@@ -145,7 +115,7 @@ class RoomManager {
             ...this.roomState,
             players: [...this.roomState.players]
           }
-        }, true);
+        });
       }
     }, 1000);
 
@@ -174,7 +144,7 @@ class RoomManager {
       player: this.myPlayerConfig
     };
 
-    // Anında Katılma İsteği Gönder (MQTT bağlandığı an otomatik fırlatılır)
+    // Anında Katılma İsteği Gönder
     this.publishToCloud(cleanCode, joinPayload);
 
     // Joiner Yeniden Deneme Döngüsü: Host bizi ekleyene kadar her 1s'de istek gönder
@@ -212,7 +182,7 @@ class RoomManager {
       inGameState: initialInGameState
     };
 
-    this.publishToCloud(this.roomCode, payload, true);
+    this.publishToCloud(this.roomCode, payload);
     this.notifyListeners(this.roomCode, payload);
   }
 
@@ -244,7 +214,6 @@ class RoomManager {
 
       let playerToAdd = payload.player;
       if (!exists) {
-        // İsim çakışması varsa benzersiz ad yap
         const sameNameCount = this.roomState.players.filter(
           p => p.name && p.name.trim().toLowerCase().startsWith(payload.player.name.trim().toLowerCase())
         ).length;
@@ -268,7 +237,7 @@ class RoomManager {
         }
       };
 
-      this.publishToCloud(this.roomCode, statePayload, true);
+      this.publishToCloud(this.roomCode, statePayload);
       this.notifyListeners(this.roomCode, statePayload);
     }
 
@@ -333,18 +302,20 @@ class RoomManager {
     }
   }
 
-  // Broker Üzerinden Yayın Yap (WSS WebSocket)
-  publishToCloud(code, payload, retain = false) {
+  // PubNub Üzerinden Yayın Yap
+  publishToCloud(code, payload) {
     if (!code || !payload) return;
-    const topic = `defuse_bomb/room/${code}`;
-    const msgStr = JSON.stringify(payload);
+    const channel = `defuse_bomb_room_${code}`;
+    const pb = this.getPubNubInstance();
 
-    if (this.client) {
+    if (pb) {
       try {
-        const isRetain = retain || payload.type === 'STATE_UPDATE';
-        this.client.publish(topic, msgStr, { qos: 1, retain: isRetain });
+        pb.publish({
+          channel: channel,
+          message: payload
+        });
       } catch (e) {
-        console.warn('MQTT publish error:', e);
+        console.warn('PubNub publish error:', e);
       }
     }
   }
