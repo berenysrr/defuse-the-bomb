@@ -142,8 +142,8 @@ export default function Lobby() {
   // Oyunu Başlat
   const handleStartGame = async () => {
     if (mode === 'ROOM_WAIT') {
-      await roomManager.startGameBroadcast(joinedPlayers);
-      startGame(joinedPlayers, roomCode);
+      const initialState = startGame(joinedPlayers, roomCode);
+      await roomManager.startGameBroadcast(initialState.players, initialState);
     } else {
       startGame(localConfigs, null);
     }

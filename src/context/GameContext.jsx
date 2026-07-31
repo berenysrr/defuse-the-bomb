@@ -136,6 +136,23 @@ export function GameProvider({ children }) {
     setUsedQuestionIds([firstQ.id]);
 
     addLog(`💥 ANİ ÖLÜM RULETİ BAŞLADI! Yanlış kabloyu kesen anında patlar!`);
+
+    const initialState = {
+      turnIndex: 0,
+      turnDirection: 1,
+      timeLeft: 60,
+      players: newPlayers,
+      wires: initialWires,
+      currentQuestion: firstQ,
+      explodingWireId: initialExplodeId,
+      gameState: 'PLAYING'
+    };
+
+    if (roomCode) {
+      roomManager.broadcastInGameState(initialState);
+    }
+
+    return initialState;
   };
 
   const sanitizePlayers = (playerList) => {
