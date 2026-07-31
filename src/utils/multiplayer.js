@@ -1,4 +1,4 @@
-// GÜVENİLİR KÜRESEL GERÇEK ZAMANLI PUBSUB MOTORU (PUBNUB GLOBAL REALTIME API)
+// GÜVENİLİR PUBNUB RESMİ SDK MOTORU (OFFICIAL WEBSOCKET ENGINE)
 
 const PUBNUB_SUB_KEY = 'demo';
 const PUBNUB_PUB_KEY = 'demo';
@@ -8,10 +8,9 @@ class RoomManager {
     this.roomCode = null;
     this.isHost = false;
     this.listeners = new Map();
-    this.isStreaming = false;
-    this.abortController = null;
+    this.myPlayerConfig = null;
+    this.pubnub = null;
     this.heartbeatInterval = null;
-    this.myPlayerId = null;
 
     this.roomState = {
       code: null,
@@ -22,19 +21,30 @@ class RoomManager {
     };
   }
 
-  stopStream() {
-    this.isStreaming = false;
-    if (this.abortController) {
-      try {
-        this.abortController.abort();
-      } catch (e) {
-        // ignore
-      }
-      this.abortController = null;
+  initPubNub(uuid) {
+    if (this.pubnub) return;
+
+    const PubNubSDK = window.PubNub;
+    if (PubNubSDK) {
+      this.pubnub = new PubNubSDK({
+        publishKey: PUBNUB_PUB_KEY,
+        subscribeKey: PUBNUB_SUB_KEY,
+        userId: uuid || 'user_' + Math.random().toString(36).substring(2, 8)
+      });
     }
+  }
+
+  stopStream() {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
+    }
+    if (this.pubnub && this.roomCode) {
+      try {
+        this.pubnub.unsubscribe({ channels: [`defuse_bomb_room_${this.roomCode}`] });
+      } catch (e) {
+        // ignore
+      }
     }
   }
 
@@ -45,32 +55,27 @@ class RoomManager {
     const code = Math.random().toString(36).substring(2, 7).toUpperCase();
     this.roomCode = code;
     this.isHost = true;
-    this.myPlayerId = hostPlayerConfig.id;
-
-    const hostPlayer = {
-      ...hostPlayerConfig,
-      isHost: true
-    };
+    this.myPlayerConfig = { ...hostPlayerConfig, isHost: true };
 
     this.roomState = {
       code,
-      hostId: hostPlayer.id,
-      players: [hostPlayer],
+      hostId: this.myPlayerConfig.id,
+      players: [this.myPlayerConfig],
       gameState: 'LOBBY',
       inGameState: null
     };
 
-    // PubNub canlı akışını başlat
+    // PubNub SDK Başlat ve Abone Ol
     this.startPubNubStream(code);
 
-    // Odanın oluşturulduğunu buluta duyur
+    // Odanın oluşturulduğunu masaya duyur
     await this.publishToCloud(code, {
       type: 'STATE_UPDATE',
       roomCode: code,
       state: this.roomState
     });
 
-    // Host Kalp Atışı: Her 1 saniyede oda durumunu yayınla
+    // Host Kalp Atışı: Her 1 saniyede güncel oda durumunu yayınla
     this.heartbeatInterval = setInterval(() => {
       if (this.isHost && this.roomCode === code) {
         this.publishToCloud(code, {
@@ -91,38 +96,33 @@ class RoomManager {
     const cleanCode = code.trim().toUpperCase();
     this.roomCode = cleanCode;
     this.isHost = false;
-    this.myPlayerId = playerConfig.id;
-
-    const joinerPlayer = {
-      ...playerConfig,
-      isHost: false
-    };
+    this.myPlayerConfig = { ...playerConfig, isHost: false };
 
     this.roomState = {
       code: cleanCode,
       hostId: null,
-      players: [joinerPlayer],
+      players: [this.myPlayerConfig],
       gameState: 'LOBBY',
       inGameState: null
     };
 
-    // PubNub canlı akışını başlat
+    // PubNub SDK Başlat ve Abone Ol
     this.startPubNubStream(cleanCode);
 
     const joinPayload = {
       type: 'JOIN_REQUEST',
       roomCode: cleanCode,
-      player: joinerPlayer
+      player: this.myPlayerConfig
     };
 
-    // Anında gönder
+    // Anında Katılma İsteği Gönder
     this.publishToCloud(cleanCode, joinPayload);
 
-    // Joiner Yeniden Deneme Döngüsü: Host'un oyuncu listesinde KENDİMİZ görünene kadar her 1s'de istek at
+    // Joiner Yeniden Deneme Döngüsü: Host bizi ekleyene kadar her 1s'de istek gönder
     this.heartbeatInterval = setInterval(() => {
       if (!this.isHost && this.roomCode === cleanCode) {
         const isMeInRoom = this.roomState.players.some(
-          p => p.id === this.myPlayerId || (p.name && p.name.trim().toLowerCase() === joinerPlayer.name.trim().toLowerCase())
+          p => p.id === this.myPlayerConfig.id || (p.name && p.name.trim().toLowerCase() === this.myPlayerConfig.name.trim().toLowerCase())
         );
         if (!isMeInRoom) {
           this.publishToCloud(cleanCode, joinPayload);
@@ -170,39 +170,53 @@ class RoomManager {
     this.notifyListeners(this.roomCode, payload);
   }
 
-  // 5. TEK SOKETLİ SIRALI AKIŞ MOTORU
-  async startPubNubStream(code) {
-    this.isStreaming = true;
+  // 5. RESMİ PUBNUB CANLI AKIŞ MOTORU (WEBSOCKETS + AUTO RECONNECT)
+  startPubNubStream(code) {
+    const uuid = this.myPlayerConfig ? this.myPlayerConfig.id : 'user_' + Math.random().toString(36).substring(2, 8);
+    this.initPubNub(uuid);
+
+    const channel = `defuse_bomb_room_${code}`;
+
+    if (this.pubnub) {
+      this.pubnub.removeAllListeners();
+      this.pubnub.addListener({
+        message: (evt) => {
+          if (evt && evt.message) {
+            this.handleCloudPayload(evt.message);
+          }
+        }
+      });
+      this.pubnub.subscribe({ channels: [channel] });
+    } else {
+      // Fallback
+      this.startFallbackStream(code);
+    }
+  }
+
+  // REST Fallback (İkincil Yedek Akış)
+  startFallbackStream(code) {
     const channel = `defuse_bomb_room_${code}`;
     let timetoken = '0';
 
-    while (this.isStreaming && this.roomCode === code) {
+    const poll = async () => {
+      if (this.roomCode !== code) return;
       try {
-        this.abortController = new AbortController();
-        const timeoutId = setTimeout(() => {
-          if (this.abortController) this.abortController.abort();
-        }, 12000);
-
-        const url = `https://ps.pubnub.com/subscribe/${PUBNUB_SUB_KEY}/${channel}/0/${timetoken}`;
-        const res = await fetch(url, { signal: this.abortController.signal });
-        clearTimeout(timeoutId);
-
+        const res = await fetch(`https://ps.pubnub.com/subscribe/${PUBNUB_SUB_KEY}/${channel}/0/${timetoken}`);
         if (res.ok) {
           const data = await res.json();
           if (data && Array.isArray(data[0])) {
-            if (data[1]) {
-              timetoken = data[1];
-            }
-            data[0].forEach(msg => {
-              this.handleCloudPayload(msg);
-            });
+            if (data[1]) timetoken = data[1];
+            data[0].forEach(msg => this.handleCloudPayload(msg));
           }
         }
       } catch (e) {
-        await new Promise(r => setTimeout(r, 600));
+        // ignore
       }
-      await new Promise(r => setTimeout(r, 100));
-    }
+      if (this.roomCode === code) {
+        setTimeout(poll, 600);
+      }
+    };
+    poll();
   }
 
   // Buluttan Gelen Mesajları İşle
@@ -218,18 +232,15 @@ class RoomManager {
         this.roomState.players.push(payload.player);
       }
 
-      // Güncellenmiş listeyi masaya hemen yayınla
-      this.publishToCloud(this.roomCode, {
+      // Güncellenmiş oyuncu listesini yayınla
+      const statePayload = {
         type: 'STATE_UPDATE',
         roomCode: this.roomCode,
         state: this.roomState
-      });
+      };
 
-      this.notifyListeners(this.roomCode, {
-        type: 'STATE_UPDATE',
-        roomCode: this.roomCode,
-        state: this.roomState
-      });
+      this.publishToCloud(this.roomCode, statePayload);
+      this.notifyListeners(this.roomCode, statePayload);
     }
 
     // B) Katılımcılar & Host: Güncel Oda Durumu
@@ -279,22 +290,28 @@ class RoomManager {
     }
   }
 
-  // PubNub POST Yöntemi ile Yayın Yap (Paket boyutu ve mobil proxy sınırlaması kalmaz)
+  // PubNub Üzerinden Yayın Yap
   async publishToCloud(code, payload) {
     try {
       const channel = `defuse_bomb_room_${code}`;
-      const url = `https://ps.pubnub.com/publish/${PUBNUB_PUB_KEY}/${PUBNUB_SUB_KEY}/0/${channel}/0`;
-      await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      if (this.pubnub) {
+        await this.pubnub.publish({
+          channel: channel,
+          message: payload
+        });
+      } else {
+        // Fallback POST
+        await fetch(`https://ps.pubnub.com/publish/${PUBNUB_PUB_KEY}/${PUBNUB_SUB_KEY}/0/${channel}/0`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      }
     } catch (e) {
       console.warn('PubNub pub error:', e);
     }
   }
 
-  // Oda koduna özel dinleyici
   subscribe(roomCode, callback) {
     let targetCode = roomCode;
     let cb = callback;
