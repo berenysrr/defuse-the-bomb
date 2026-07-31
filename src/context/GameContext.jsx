@@ -30,8 +30,8 @@ const CARD_TYPES = [
   { id: 'PASS', name: '🔀 BOMBAYI PASLA', desc: 'Bombayı seçtiğin rakibine at!', color: '#f97316' },
   { id: 'REVERSE', name: '🔄 YÖNÜ TERS ÇEVİR', desc: 'Tur yönünü tersine döndür!', color: '#a855f7' },
   { id: 'CUT_WIRE', name: '✂️ KABLO KESTİR', desc: 'Seçtiğin rakibe 1 kablo kestir!', color: '#ef4444' },
-  { id: 'SPEED_UP', name: '⚡ ZAMANI HIZLANDIR', desc: 'Bombanın süresini 5sn yap!', color: '#eab308' },
-  { id: 'ADD_TIME', name: '⏳ +5 SANİYE EKLE', desc: 'Sürene ekstra 5 saniye ekle!', color: '#10b981' },
+  { id: 'SPEED_UP', name: '⚡ ZAMANI HIZLANDIR', desc: 'Ortak bombayı 5sn yap!', color: '#eab308' },
+  { id: 'ADD_TIME', name: '⏳ +5 SANİYE EKLE', desc: 'Ortak bombaya +5s ekle!', color: '#10b981' },
   { id: 'SHIELD', name: '🛡️ BOMBA KALKANI', desc: 'Patlamadan 1 defa korun!', color: '#3b82f6' },
   { id: 'RESET_WIRES', name: '🎲 KABLOLARI SIFIRLA', desc: 'Tüm kesik kabloları yenile!', color: '#06b6d4' },
   { id: 'STEAL', name: '🃏 RAKİPTEN KART ÇAL', desc: 'Seçtiğin rakibinden 1 kart çal!', color: '#ec4899' }
@@ -41,7 +41,10 @@ export function GameProvider({ children }) {
   const [gameState, setGameState] = useState('LOBBY');
   const [turnIndex, setTurnIndex] = useState(0); 
   const [turnDirection, setTurnDirection] = useState(1); 
-  const [timeLeft, setTimeLeft] = useState(10);
+  
+  // TEK VE ORTAK CANLI BOMBA GERİ SAYIM SÜRESİ (60 SANİYE KESİNTİSİZ)
+  const [timeLeft, setTimeLeft] = useState(60);
+
   const [lastPlayedCard, setLastPlayedCard] = useState(null);
   const [wireEffect, setWireEffect] = useState(null);
 
@@ -83,7 +86,7 @@ export function GameProvider({ children }) {
     setGameState('PLAYING');
     setTurnIndex(0);
     setTurnDirection(1);
-    setTimeLeft(10);
+    setTimeLeft(60); // TEK VE ORTAK BOMBA SÜRESİ 60 SANİYE KESİNTİSİZ!
     setTurnCount(0);
     setShowChaosWheel(false);
     setDoubleWireCutNext(false);
@@ -105,13 +108,13 @@ export function GameProvider({ children }) {
         lives: 3,
         hand: [card1, card2],
         hasShield: false,
-        isBot: idx !== 0 // 1. Oyuncu İnsan, Diğerleri Akıllı Bot!
+        isBot: idx !== 0
       };
     });
 
     setPlayers(newPlayers);
     pickNewQuestion();
-    addLog(`💣 Oyun Başladı! Bomba ${newPlayers[0].name}'in Önünde!`);
+    addLog(`💣 TEK BÜYÜK BOMBA BAŞLADI! Ortak Süre: 60 Saniye!`);
   };
 
   const resetWires = () => {
@@ -134,14 +137,13 @@ export function GameProvider({ children }) {
     const randomQ = availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
     setUsedQuestionIds(prev => [...prev, randomQ.id]);
     setCurrentQuestion(randomQ);
-    setTimeLeft(10);
   };
 
   const addLog = (msg) => {
     setLogs(prev => [msg, ...prev.slice(0, 3)]);
   };
 
-  // BOT OYUNCU OTOMATİK HAMLE ENGINE (AI BOT PLAYER)
+  // BOT OYUNCU HAMLE ENGINE
   useEffect(() => {
     let botTimer;
     if (gameState === 'PLAYING' && players[turnIndex]?.isBot && !showChaosWheel) {
@@ -150,27 +152,26 @@ export function GameProvider({ children }) {
         const aliveRivals = players.filter((p, idx) => idx !== turnIndex && p.lives > 0);
         const randomTarget = aliveRivals[Math.floor(Math.random() * aliveRivals.length)];
 
-        // %45 İhtimalle Elindeki Bir Aksiyon Kartını Oynar
         if (bot.hand.length > 0 && Math.random() < 0.45) {
           const cardToPlay = bot.hand[Math.floor(Math.random() * bot.hand.length)];
           playCard(cardToPlay, randomTarget);
           return;
         }
 
-        // Kart oynamazsa soruyu cevaplar
         if (currentQuestion?.isMiniGame) {
-          handleMiniGameResult(Math.random() < 0.85); // %85 Mini Oyun Başarısı
+          handleMiniGameResult(Math.random() < 0.85);
         } else if (currentQuestion?.options) {
-          const isCorrect = Math.random() < 0.85; // %85 Doğru Cevap
+          const isCorrect = Math.random() < 0.85;
           const choice = isCorrect ? currentQuestion.correct : (currentQuestion.correct + 1) % 4;
           answerQuestion(choice);
         }
-      }, 1500); // 1.5 Saniye düşünme süresi
+      }, 1200);
     }
 
     return () => clearTimeout(botTimer);
   }, [gameState, turnIndex, currentQuestion, showChaosWheel]);
 
+  // ORTAK BOMBA GERİ SAYIMI (KESİNTİSİZ TÜM MASAYI ETKİLER)
   useEffect(() => {
     let timerId;
     if (gameState === 'PLAYING' && timeLeft > 0 && !showChaosWheel) {
@@ -180,7 +181,7 @@ export function GameProvider({ children }) {
             handleTimeOut();
             return 0;
           }
-          sounds.playBeep(prev < 4 ? 1000 : 500, 0.04);
+          sounds.playBeep(prev < 10 ? 1000 : 500, 0.04);
           return prev - 1;
         });
       }, 1000);
@@ -189,8 +190,8 @@ export function GameProvider({ children }) {
   }, [gameState, timeLeft, showChaosWheel]);
 
   const handleTimeOut = () => {
-    addLog(`⏰ ${players[turnIndex].name} yetişemedi!`);
-    cutRandomWire();
+    addLog(`⏰ ORTAK SÜRE BİTTİ! Bomba ${players[turnIndex].name}'in elinde patladı!`);
+    triggerExplosionForPlayer(turnIndex);
   };
 
   const passTurn = (targetIdx = null) => {
@@ -237,8 +238,8 @@ export function GameProvider({ children }) {
         break;
       }
       case 'SPEED_TURNS':
-        setTimeLeft(4);
-        addLog(`⚡ KAOS: Bomba süresi 4 saniyeye düşürüldü!`);
+        setTimeLeft(5);
+        addLog(`⚡ KAOS: Ortak Bomba Süresi 5 Saniyeye Düşürüldü!`);
         break;
       case 'CARD_RAIN':
         setPlayers(prev => prev.map(p => ({ ...p, hand: [...p.hand, getRandomCard(p.hand)] })));
@@ -259,12 +260,7 @@ export function GameProvider({ children }) {
 
     if (optionIndex === currentQuestion.correct) {
       sounds.playBeep(1200, 0.1);
-      if (timeLeft > 7) {
-        addLog(`⚡ HIZLI CEVAP! ${players[turnIndex].name} +1 Kart Kazandı! 🎁`);
-        giveCardToPlayer(turnIndex);
-      } else {
-        addLog(`✅ ${players[turnIndex].name} doğru bildi!`);
-      }
+      addLog(`✅ ${players[turnIndex].name} doğru bildi! Bomba paslandı.`);
       passTurn();
     } else {
       addLog(`❌ Yanlış cevap! Kablo kesiliyor...`);
@@ -312,6 +308,7 @@ export function GameProvider({ children }) {
         addLog(`🛡️ KALKAN KORUDU! ${players[victimIdx].name} kurtuldu!`);
         setPlayers(prev => prev.map((p, idx) => idx === victimIdx ? { ...p, hasShield: false } : p));
         resetWires();
+        setTimeLeft(60); // Bomba patlamasında ortak süre sıfırlanır!
         passTurn();
       } else {
         triggerExplosionForPlayer(victimIdx);
@@ -338,6 +335,7 @@ export function GameProvider({ children }) {
       addLog(`🏆 ŞAMPİYON: ${alivePlayers[0].name}! 🎉`);
     } else {
       resetWires();
+      setTimeLeft(60); // Yeni turda ortak süre sıfırlanır!
       passTurn();
     }
   };
@@ -382,12 +380,12 @@ export function GameProvider({ children }) {
         break;
 
       case 'SPEED_UP':
-        addLog(`⚡ ${players[turnIndex].name} ZAMANI HIZLANDIRDI!`);
+        addLog(`⚡ ${players[turnIndex].name} ORTAK ZAMANI 5 SANİYE YAPTI!`);
         setTimeLeft(5);
         break;
 
       case 'ADD_TIME':
-        addLog(`⏳ ${players[turnIndex].name} +5 SANİYE EKLEDİ!`);
+        addLog(`⏳ ${players[turnIndex].name} ORTAK BOMBAYA +5s EKLEDİ!`);
         setTimeLeft(prev => prev + 5);
         break;
 
