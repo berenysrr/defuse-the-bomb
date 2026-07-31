@@ -1,4 +1,4 @@
-// GÜVENİLİR PUBNUB CANLI WEBSOCKET MOTORU (ZERO NPM DEPENDENCIES - 100% BROWSER NATIVE)
+// GÜVENİLİR PUBNUB ÇİFT MOTORLU (WEBSOCKET + HTTP POST REST) KÜRESEL CANLI AKIŞ SİSTEMİ
 
 const PUBNUB_SUB_KEY = 'demo';
 const PUBNUB_PUB_KEY = 'demo';
@@ -11,6 +11,8 @@ class RoomManager {
     this.pubnub = null;
     this.heartbeatInterval = null;
     this.myPlayerConfig = null;
+    this.pollInterval = null;
+    this.lastTimeToken = '0';
 
     this.roomState = {
       code: null,
@@ -45,6 +47,10 @@ class RoomManager {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
     const pb = this.getPubNubInstance();
     if (pb && this.roomCode) {
       try {
@@ -60,8 +66,9 @@ class RoomManager {
     this.roomCode = code;
 
     const channel = `defuse_bomb_room_${code}`;
-    const pb = this.getPubNubInstance();
 
+    // 1. PubNub WebSocket Dinleyici
+    const pb = this.getPubNubInstance();
     if (pb) {
       try {
         pb.removeAllListeners();
@@ -74,9 +81,29 @@ class RoomManager {
         });
         pb.subscribe({ channels: [channel] });
       } catch (e) {
-        console.warn('PubNub subscribe error:', e);
+        console.warn('PubNub SDK subscribe error:', e);
       }
     }
+
+    // 2. HTTP Polling Yedek Dinleyici (Soket Tıkanmasına Karşı 1.5s Güvenlik Ağı)
+    const pollFallback = async () => {
+      if (this.roomCode !== code) return;
+      try {
+        const url = `https://ps.pubnub.com/subscribe/${PUBNUB_SUB_KEY}/${channel}/0/${this.lastTimeToken}`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data[0]) && data[0].length > 0) {
+            this.lastTimeToken = data[1] || this.lastTimeToken;
+            data[0].forEach(msg => this.handleCloudPayload(msg));
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    this.pollInterval = setInterval(pollFallback, 1500);
   }
 
   // 1. ODA OLUŞTUR (Host)
@@ -302,22 +329,28 @@ class RoomManager {
     }
   }
 
-  // PubNub Üzerinden Yayın Yap
-  publishToCloud(code, payload) {
+  // PubNub Üzerinden Yayın Yap (Çift Motorlu: WebSocket + HTTP POST REST)
+  async publishToCloud(code, payload) {
     if (!code || !payload) return;
     const channel = `defuse_bomb_room_${code}`;
-    const pb = this.getPubNubInstance();
 
+    // 1. PubNub SDK (WebSocket)
+    const pb = this.getPubNubInstance();
     if (pb) {
       try {
-        pb.publish({
-          channel: channel,
-          message: payload
-        });
-      } catch (e) {
-        console.warn('PubNub publish error:', e);
-      }
+        pb.publish({ channel: channel, message: payload });
+      } catch (e) {}
     }
+
+    // 2. PubNub REST API (HTTP POST - Çifte Güvenlik)
+    try {
+      const url = `https://ps.pubnub.com/publish/${PUBNUB_PUB_KEY}/${PUBNUB_SUB_KEY}/0/${channel}/0`;
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).catch(() => {});
+    } catch (e) {}
   }
 
   subscribe(roomCode, callback) {
