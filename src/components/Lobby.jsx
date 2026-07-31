@@ -127,9 +127,11 @@ export default function Lobby() {
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
-  // 2. Tam Davet Linkini Kopyala (ör: http://...?room=BOMB1)
+  // 2. Tam Davet Linkini Kopyala (ör: https://.../defuse-the-bomb/?room=BOMB1)
   const copyFullLink = () => {
-    const link = `${window.location.origin}/?room=${roomCode}`;
+    const cleanUrl = window.location.href.split('?')[0].split('#')[0];
+    const baseUrl = cleanUrl.endsWith('/') ? cleanUrl : cleanUrl + '/';
+    const link = `${baseUrl}?room=${roomCode}`;
     navigator.clipboard.writeText(link);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
