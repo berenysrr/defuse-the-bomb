@@ -118,11 +118,13 @@ class RoomManager {
     // Anında gönder
     this.publishToCloud(cleanCode, joinPayload);
 
-    // Joiner Yeniden Deneme Döngüsü: Host'un oyuncu listesinde Host görünene kadar her 1s'de istek at
+    // Joiner Yeniden Deneme Döngüsü: Host'un oyuncu listesinde KENDİMİZ görünene kadar her 1s'de istek at
     this.heartbeatInterval = setInterval(() => {
       if (!this.isHost && this.roomCode === cleanCode) {
-        const hasHost = this.roomState.players.some(p => p.isHost);
-        if (!hasHost) {
+        const isMeInRoom = this.roomState.players.some(
+          p => p.id === this.myPlayerId || (p.name && p.name.trim().toLowerCase() === joinerPlayer.name.trim().toLowerCase())
+        );
+        if (!isMeInRoom) {
           this.publishToCloud(cleanCode, joinPayload);
         }
       }
