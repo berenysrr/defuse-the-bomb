@@ -1,4 +1,4 @@
-// GÜVENİLİR KÜRESEL GERÇEK ZAMANLI MQTT WEBSOCKET MOTORU
+// GÜVENİLİR KÜRESEL GERÇEK ZAMANLI MQTT WEBSOCKET MOTORU (IMMUTABLE STATE RE-RENDER FIX)
 
 import mqtt from 'mqtt';
 
@@ -64,7 +64,10 @@ class RoomManager {
             this.publishToCloud(code, {
               type: 'STATE_UPDATE',
               roomCode: code,
-              state: this.roomState
+              state: {
+                ...this.roomState,
+                players: [...this.roomState.players]
+              }
             });
           }
         }
@@ -127,7 +130,10 @@ class RoomManager {
         this.publishToCloud(code, {
           type: 'STATE_UPDATE',
           roomCode: code,
-          state: this.roomState
+          state: {
+            ...this.roomState,
+            players: [...this.roomState.players]
+          }
         });
       }
     }, 1000);
@@ -164,7 +170,7 @@ class RoomManager {
     this.heartbeatInterval = setInterval(() => {
       if (!this.isHost && this.roomCode === cleanCode) {
         const isMeInRoom = this.roomState.players.some(
-          p => p.id === this.myPlayerConfig.id || (p.name && p.name.trim().toLowerCase() === this.myPlayerConfig.name.trim().toLowerCase())
+          p => p.id === this.myPlayerConfig.id
         );
         if (!isMeInRoom) {
           this.publishToCloud(cleanCode, joinPayload);
@@ -172,7 +178,10 @@ class RoomManager {
       }
     }, 1000);
 
-    return this.roomState;
+    return {
+      ...this.roomState,
+      players: [...this.roomState.players]
+    };
   }
 
   // 3. OYUNU BAŞLAT (Host)
@@ -180,7 +189,7 @@ class RoomManager {
     if (!this.roomCode) return;
 
     this.roomState.gameState = 'PLAYING';
-    this.roomState.players = players;
+    this.roomState.players = [...players];
     if (initialInGameState) {
       this.roomState.inGameState = initialInGameState;
     }
@@ -188,7 +197,7 @@ class RoomManager {
     const payload = {
       type: 'GAME_START',
       roomCode: this.roomCode,
-      players: players,
+      players: [...players],
       inGameState: initialInGameState
     };
 
@@ -219,16 +228,34 @@ class RoomManager {
     // A) Host: Katılma İsteğini İşler
     if (payload.type === 'JOIN_REQUEST' && payload.player && this.isHost) {
       const exists = this.roomState.players.some(
-        p => p.id === payload.player.id || (p.name && p.name.trim().toLowerCase() === payload.player.name.trim().toLowerCase())
+        p => p.id === payload.player.id
       );
+
+      let playerToAdd = payload.player;
       if (!exists) {
-        this.roomState.players.push(payload.player);
+        // İsim çakışması varsa benzersiz ad yap
+        const sameNameCount = this.roomState.players.filter(
+          p => p.name && p.name.trim().toLowerCase().startsWith(payload.player.name.trim().toLowerCase())
+        ).length;
+
+        if (sameNameCount > 0) {
+          playerToAdd = {
+            ...payload.player,
+            name: `${payload.player.name} (${sameNameCount + 1})`
+          };
+        }
+
+        // Yeni dizi referansı yaratılarak React re-render zorlanır
+        this.roomState.players = [...this.roomState.players, playerToAdd];
       }
 
       const statePayload = {
         type: 'STATE_UPDATE',
         roomCode: this.roomCode,
-        state: this.roomState
+        state: {
+          ...this.roomState,
+          players: [...this.roomState.players]
+        }
       };
 
       this.publishToCloud(this.roomCode, statePayload);
@@ -240,19 +267,33 @@ class RoomManager {
       if (payload.state.players && payload.state.players.length > 0) {
         if (this.isHost) {
           const currentHostIds = new Set(this.roomState.players.map(p => p.id));
+          let changed = false;
+          const newPlayers = [...this.roomState.players];
+
           payload.state.players.forEach(p => {
             if (!currentHostIds.has(p.id)) {
-              this.roomState.players.push(p);
+              newPlayers.push(p);
+              changed = true;
             }
           });
+
+          if (changed) {
+            this.roomState.players = newPlayers;
+          }
         } else {
-          this.roomState = payload.state;
+          this.roomState = {
+            ...payload.state,
+            players: [...payload.state.players]
+          };
         }
 
         this.notifyListeners(this.roomCode, {
           type: 'STATE_UPDATE',
           roomCode: this.roomCode,
-          state: this.roomState
+          state: {
+            ...this.roomState,
+            players: [...this.roomState.players]
+          }
         });
       }
     }
@@ -261,12 +302,12 @@ class RoomManager {
     if (payload.type === 'GAME_START') {
       this.roomState.gameState = 'PLAYING';
       if (payload.players && payload.players.length > 0) {
-        this.roomState.players = payload.players;
+        this.roomState.players = [...payload.players];
       }
       this.notifyListeners(this.roomCode, {
         type: 'GAME_START',
         roomCode: this.roomCode,
-        players: this.roomState.players,
+        players: [...this.roomState.players],
         inGameState: payload.inGameState
       });
     }

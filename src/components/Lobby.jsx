@@ -52,7 +52,7 @@ export default function Lobby() {
       // 1. Oda durumu güncellendiğinde oyuncu listesini yenile
       if (payload.type === 'STATE_UPDATE' && payload.state) {
         if (payload.state.players && payload.state.players.length > 0) {
-          setJoinedPlayers(payload.state.players);
+          setJoinedPlayers([...payload.state.players]);
         }
       }
 
