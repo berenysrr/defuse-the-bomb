@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGame } from '../context/GameContext';
+import TargetPlayerModal from './TargetPlayerModal';
 import { Shield, Sparkles, Zap, RotateCcw, Shuffle, Scissors, Hourglass, RefreshCw, Hand } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// İkon Eşleştirmeleri
 const CARD_ICONS = {
   'PASS': Shuffle,
   'REVERSE': RotateCcw,
@@ -15,15 +15,49 @@ const CARD_ICONS = {
   'STEAL': Hand
 };
 
+// Rakip Seçimi Gerektiren Kartlar
+const TARGETED_CARDS = ['PASS', 'CUT_WIRE', 'STEAL'];
+
 export default function PlayerHand() {
   const { players, turnIndex, playCard, gameState, lastPlayedCard } = useGame();
   const currentPlayer = players[turnIndex];
 
+  // Hedef Seçim Modal State'i
+  const [selectedCardForTarget, setSelectedCardForTarget] = useState(null);
+
   if (gameState !== 'PLAYING' || !currentPlayer) return null;
+
+  // Diğer Canlı Rakipler Listesi
+  const opponents = players.filter((p, idx) => idx !== turnIndex && p.lives > 0);
+
+  const handleCardClick = (card) => {
+    // Eğer kart rakip seçimi gerektiriyorsa modalı aç
+    if (TARGETED_CARDS.includes(card.id) && opponents.length > 0) {
+      setSelectedCardForTarget(card);
+    } else {
+      playCard(card);
+    }
+  };
+
+  const handleSelectTarget = (targetPlayer) => {
+    if (selectedCardForTarget) {
+      playCard(selectedCardForTarget, targetPlayer);
+      setSelectedCardForTarget(null);
+    }
+  };
 
   return (
     <div style={{ width: '100%', maxWidth: '750px', display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '16px', zIndex: 40, margin: '16px auto 0 auto' }}>
       
+      {/* 🎯 HEDEF RAKİP SEÇİM MODALI */}
+      <TargetPlayerModal
+        isVisible={!!selectedCardForTarget}
+        card={selectedCardForTarget}
+        opponents={opponents}
+        onSelectTarget={handleSelectTarget}
+        onClose={() => setSelectedCardForTarget(null)}
+      />
+
       {/* 🃏 ATILAN KARTIN FIRLAMA ANİMASYONU */}
       <AnimatePresence>
         {lastPlayedCard && (
@@ -107,7 +141,7 @@ export default function PlayerHand() {
                 animate={{ scale: 1, y: 0 }}
                 whileHover={{ y: -12, scale: 1.08, zIndex: 30 }}
                 whileTap={{ scale: 0.92 }}
-                onClick={() => playCard(card)}
+                onClick={() => handleCardClick(card)}
                 className="action-card"
                 style={{
                   width: '145px',
@@ -125,24 +159,21 @@ export default function PlayerHand() {
                   userSelect: 'none'
                 }}
               >
-                {/* İkon & Başlık */}
                 <div>
                   <div style={{ display: 'inline-flex', padding: '6px', background: 'rgba(255,255,255,0.15)', borderRadius: '10px', marginBottom: '6px' }}>
                     <CardIcon size={20} color="#ffffff" />
                   </div>
-                  <div style={{ fontSize: '13px', fontWeight: '900', color: '#ffffff', textShadow: '0 2px 4px rgba(0,0,0,0.8)', leading: '1.2' }}>
+                  <div style={{ fontSize: '13px', fontWeight: '900', color: '#ffffff', textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}>
                     {card.name}
                   </div>
                 </div>
 
-                {/* Açıklama */}
-                <div style={{ fontSize: '10px', color: '#e2e8f0', background: 'rgba(0,0,0,0.6)', padding: '6px', borderRadius: '8px', backdropFilter: 'blur(4px)' }}>
+                <div style={{ fontSize: '10px', color: '#e2e8f0', background: 'rgba(0,0,0,0.6)', padding: '6px', borderRadius: '8px' }}>
                   {card.desc}
                 </div>
 
-                {/* Buton Etiketi */}
                 <div style={{ fontSize: '10px', color: '#fde047', fontWeight: '900', background: 'rgba(0,0,0,0.7)', padding: '4px', borderRadius: '6px', letterSpacing: '0.5px' }}>
-                  MASAYA FIRLAT
+                  {TARGETED_CARDS.includes(card.id) ? '🎯 RAKİP SEÇ & FIRLAT' : 'MASAYA FIRLAT'}
                 </div>
               </motion.div>
             );
