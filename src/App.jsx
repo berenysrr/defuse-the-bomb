@@ -5,9 +5,43 @@ import QuestionCard from './components/QuestionCard';
 import MiniGameCard from './components/MiniGameCard';
 import Leaderboard from './components/Leaderboard';
 import PlayerHand from './components/PlayerHand';
-import GameLogs from './components/GameLogs';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trophy, RotateCcw, Shield, Scissors } from 'lucide-react';
+import { Trophy, RotateCcw, Scissors } from 'lucide-react';
+
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("Game Render Error Caught:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '40px 20px', textAlign: 'center', color: '#fff', background: '#020617', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <h2 style={{ color: '#ef4444', fontSize: '26px', marginBottom: '10px' }}>⚠️ ARAYÜZ YÜKLENİRKEN AKSAMA OLUŞTU</h2>
+          <p style={{ color: '#94a3b8', maxWidth: '500px', fontSize: '14px', marginBottom: '24px' }}>
+            Sayfayı yenileyerek oyuna kaldığınız yerden devam edebilirsiniz.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{ padding: '14px 32px', fontSize: '16px', background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#000', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 0 20px rgba(245,158,11,0.5)' }}
+          >
+            🔄 SAYFAYI YENİLE VE BAŞLAT
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function GameBoard() {
   const { 
@@ -27,8 +61,14 @@ function GameBoard() {
     return <Lobby />;
   }
 
+  const safePlayers = Array.isArray(players) ? players : [];
+  const safeTurnIndex = typeof turnIndex === 'number' && turnIndex >= 0 && turnIndex < safePlayers.length ? turnIndex : 0;
+  const activePlayer = safePlayers[safeTurnIndex] || { name: 'Oyuncu', avatar: { icon: '🐵' } };
+  const safeTimeLeft = typeof timeLeft === 'number' && !isNaN(timeLeft) ? timeLeft : 60;
+  const safeWires = Array.isArray(wires) ? wires : [];
+
   if (gameState === 'GAME_OVER') {
-    const winner = players.find(p => p.lives > 0);
+    const winner = safePlayers.find(p => p.lives > 0) || safePlayers[0];
     return (
       <div className="modern-arena-wrapper" style={{ justifyContent: 'center' }}>
         <motion.div
@@ -46,11 +86,11 @@ function GameBoard() {
           </h1>
 
           <div style={{ fontSize: '56px', marginBottom: '10px' }}>
-            {winner?.avatar?.icon}
+            {winner?.avatar?.icon || '🏆'}
           </div>
 
           <h2 style={{ color: '#f8fafc', fontSize: '32px', marginBottom: '20px' }}>
-            {winner?.name}
+            {winner?.name || 'Oyuncu'}
           </h2>
 
           <p style={{ color: '#94a3b8', marginBottom: '32px', fontSize: '16px' }}>
@@ -60,7 +100,7 @@ function GameBoard() {
           <motion.button
             whileHover={{ scale: 1.06 }}
             whileTap={{ scale: 0.94 }}
-            onClick={() => startGame(players)}
+            onClick={() => startGame(safePlayers)}
             style={{
               padding: '16px 36px',
               fontSize: '17px',
@@ -84,8 +124,6 @@ function GameBoard() {
     );
   }
 
-  const activePlayer = players[turnIndex];
-
   return (
     <div className="modern-arena-wrapper">
       
@@ -100,7 +138,7 @@ function GameBoard() {
 
           {/* SIRA BANNERİ */}
           <motion.div
-            key={activePlayer?.id}
+            key={activePlayer?.id || 0}
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             style={{
@@ -117,8 +155,8 @@ function GameBoard() {
               fontSize: '15px'
             }}
           >
-            <span style={{ fontSize: '22px' }}>{activePlayer?.avatar?.icon}</span>
-            <span>SIRA: {activePlayer?.name?.toUpperCase()} HAMLE YAPIYOR!</span>
+            <span style={{ fontSize: '22px' }}>{activePlayer?.avatar?.icon || '🐵'}</span>
+            <span>SIRA: {(activePlayer?.name || 'OYUNCU').toUpperCase()} HAMLE YAPIYOR!</span>
           </motion.div>
         </div>
 
@@ -190,16 +228,16 @@ function GameBoard() {
 
         {/* PARLAYAN CANLI BOMBA */}
         <motion.div
-          animate={{ scale: timeLeft <= 5 ? [1, 1.2, 1] : [1, 1.05, 1] }}
-          transition={{ repeat: Infinity, duration: timeLeft <= 5 ? 0.35 : 2 }}
+          animate={{ scale: safeTimeLeft <= 5 ? [1, 1.2, 1] : [1, 1.05, 1] }}
+          transition={{ repeat: Infinity, duration: safeTimeLeft <= 5 ? 0.35 : 2 }}
           style={{
             position: 'relative',
             width: '135px',
             height: '135px',
             borderRadius: '50%',
             background: '#0f172a',
-            border: `4px solid ${timeLeft <= 5 ? '#ff0055' : '#ef4444'}`,
-            boxShadow: `0 0 60px ${timeLeft <= 5 ? '#ff0055' : '#ef4444'}`,
+            border: `4px solid ${safeTimeLeft <= 5 ? '#ff0055' : '#ef4444'}`,
+            boxShadow: `0 0 60px ${safeTimeLeft <= 5 ? '#ff0055' : '#ef4444'}`,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -213,15 +251,15 @@ function GameBoard() {
             style={{ width: '95px', height: '95px', objectFit: 'cover', borderRadius: '50%' }}
           />
           <div className="font-mono-tech glow-red" style={{ position: 'absolute', bottom: '-16px', background: '#020617', padding: '3px 16px', borderRadius: '12px', fontSize: '22px', fontWeight: 'bold', color: '#ef4444', border: '1.5px solid #ef4444' }}>
-            00:{timeLeft.toString().padStart(2, '0')}
+            00:{safeTimeLeft.toString().padStart(2, '0')}
           </div>
         </motion.div>
 
         {/* 5 GÖRSEL KABLO ÇUBUĞU */}
         <div style={{ display: 'flex', gap: '10px', marginTop: '20px', marginBottom: '6px' }}>
-          {wires.map(w => (
+          {safeWires.map(w => (
             <div
-              key={w.id}
+              key={w?.id || Math.random()}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -234,13 +272,13 @@ function GameBoard() {
                   width: '16px',
                   height: '32px',
                   borderRadius: '6px',
-                  background: w.isCut ? '#1e293b' : w.color,
-                  opacity: w.isCut ? 0.2 : 1,
-                  boxShadow: w.isCut ? 'none' : `0 0 16px ${w.color}`
+                  background: w?.isCut ? '#1e293b' : w?.color || '#ef4444',
+                  opacity: w?.isCut ? 0.2 : 1,
+                  boxShadow: w?.isCut ? 'none' : `0 0 16px ${w?.color || '#ef4444'}`
                 }}
               />
-              <span style={{ fontSize: '9px', fontWeight: 'bold', color: w.isCut ? '#64748b' : w.color }}>
-                {w.isCut ? 'KESİLDİ' : 'SAĞLAM'}
+              <span style={{ fontSize: '9px', fontWeight: 'bold', color: w?.isCut ? '#64748b' : w?.color || '#ef4444' }}>
+                {w?.isCut ? 'KESİLDİ' : 'SAĞLAM'}
               </span>
             </div>
           ))}
@@ -263,8 +301,10 @@ function GameBoard() {
 
 export default function App() {
   return (
-    <GameProvider>
-      <GameBoard />
-    </GameProvider>
+    <ErrorBoundary>
+      <GameProvider>
+        <GameBoard />
+      </GameProvider>
+    </ErrorBoundary>
   );
 }
