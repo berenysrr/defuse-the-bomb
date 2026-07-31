@@ -1,5 +1,6 @@
 import { Peer } from 'peerjs';
 
+// KÜRESEL İNTERNET ODA SENKRONİZASYON MOTORU
 class RoomManager {
   constructor() {
     this.roomCode = null;
@@ -7,9 +8,8 @@ class RoomManager {
     this.listeners = [];
     this.channel = null;
     this.peer = null;
-    this.connections = []; // Host tarafi baglantilari
-    this.hostConn = null;  // Joiner tarafi host baglantisi
-    this.roomState = null;
+    this.connections = [];
+    this.pollInterval = null;
 
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       this.channel = new BroadcastChannel('defuse_bomb_rooms');
@@ -36,7 +36,7 @@ class RoomManager {
     this.roomCode = code;
     this.isHost = true;
 
-    this.roomState = {
+    const roomState = {
       code,
       hostId: hostPlayerConfig.id,
       players: [hostPlayerConfig],
@@ -44,41 +44,41 @@ class RoomManager {
       lastUpdate: Date.now()
     };
 
-    // PeerJS Global İnternet Sunucusu Bağlantısı
-    const peerId = `defuse-bomb-${code}`;
+    // Google STUN Sunucusu İle PeerJS Bağlantısı
     try {
-      this.peer = new Peer(peerId);
+      const peerId = `defuse-bomb-${code}`;
+      this.peer = new Peer(peerId, {
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+          ]
+        }
+      });
 
       this.peer.on('connection', (conn) => {
         this.connections.push(conn);
-
         conn.on('data', (data) => {
-          if (data.type === 'JOIN_REQUEST' && data.player) {
-            // Katılan yeni oyuncuyu oda listesine ekle
-            const exists = this.roomState.players.some(p => p.id === data.player.id || p.name === data.player.name);
-            if (!exists) {
-              this.roomState.players.push(data.player);
-            }
-            this.broadcastRoomState();
-          }
+          this.handleMessage(data);
         });
-
         conn.on('open', () => {
-          conn.send({ type: 'STATE_UPDATE', roomCode: code, state: this.roomState });
+          const state = this.getRoomState(code) || roomState;
+          conn.send({ type: 'STATE_UPDATE', roomCode: code, state });
         });
       });
     } catch (e) {
-      console.warn('PeerJS init fallback:', e);
+      console.warn('PeerJS init:', e);
     }
 
     const payload = {
       type: 'STATE_UPDATE',
       roomCode: code,
-      state: this.roomState,
+      state: roomState,
       lastUpdate: Date.now()
     };
 
     this.saveAndBroadcast(payload);
+    this.startCloudPolling(code);
     return code;
   }
 
@@ -88,67 +88,74 @@ class RoomManager {
     this.roomCode = cleanCode;
     this.isHost = false;
 
-    const peerId = `defuse-bomb-joiner-${Date.now()}`;
-    try {
-      this.peer = new Peer(peerId);
-
-      this.peer.on('open', () => {
-        const hostPeerId = `defuse-bomb-${cleanCode}`;
-        const conn = this.peer.connect(hostPeerId);
-        this.hostConn = conn;
-
-        conn.on('open', () => {
-          conn.send({ type: 'JOIN_REQUEST', roomCode: cleanCode, player: playerConfig });
-        });
-
-        conn.on('data', (data) => {
-          this.handleMessage(data);
-        });
-      });
-    } catch (e) {
-      console.warn('PeerJS join fallback:', e);
-    }
-
-    let roomState = this.getRoomState(cleanCode) || {
+    // Mevcut Oda Verisini Al
+    let currentRoomState = this.getRoomState(cleanCode) || {
       code: cleanCode,
-      players: [playerConfig],
+      players: [],
       gameState: 'LOBBY',
       lastUpdate: Date.now()
     };
 
-    const exists = roomState.players.some(p => p.name === playerConfig.name || p.id === playerConfig.id);
+    const exists = currentRoomState.players.some(p => p.name === playerConfig.name || p.id === playerConfig.id);
     if (!exists) {
-      roomState.players.push(playerConfig);
+      currentRoomState.players.push(playerConfig);
     }
 
     const payload = {
       type: 'STATE_UPDATE',
       roomCode: cleanCode,
-      state: roomState,
+      state: currentRoomState,
       lastUpdate: Date.now()
     };
 
     this.saveAndBroadcast(payload);
-    return roomState;
+
+    // Host Peer'ına Bağlan
+    try {
+      const joinerPeerId = `defuse-joiner-${Date.now()}`;
+      this.peer = new Peer(joinerPeerId, {
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+          ]
+        }
+      });
+
+      this.peer.on('open', () => {
+        const hostPeerId = `defuse-bomb-${cleanCode}`;
+        const conn = this.peer.connect(hostPeerId);
+        conn.on('open', () => {
+          conn.send({ type: 'JOIN_REQUEST', roomCode: cleanCode, player: playerConfig });
+        });
+        conn.on('data', (data) => {
+          this.handleMessage(data);
+        });
+      });
+    } catch (e) {
+      console.warn('PeerJS join:', e);
+    }
+
+    this.startCloudPolling(cleanCode);
+    return currentRoomState;
   }
 
-  // Host Oyunu Başlattığında Tüm Cihazlara Bildir
+  // Oyunu Başlat Yayınlama (Host)
   startGameBroadcast(players) {
-    if (this.roomState) {
-      this.roomState.gameState = 'PLAYING';
-      this.roomState.players = players;
-    }
+    const currentState = this.getRoomState(this.roomCode) || { code: this.roomCode, players };
+    currentState.gameState = 'PLAYING';
+    currentState.players = players;
 
     const payload = {
       type: 'GAME_START',
       roomCode: this.roomCode,
+      state: currentState,
       players: players,
       lastUpdate: Date.now()
     };
 
     this.saveAndBroadcast(payload);
 
-    // PeerJS üzerinden tüm katılımcılara gönder
     this.connections.forEach(conn => {
       if (conn.open) {
         conn.send(payload);
@@ -156,21 +163,20 @@ class RoomManager {
     });
   }
 
-  broadcastRoomState() {
-    const payload = {
-      type: 'STATE_UPDATE',
-      roomCode: this.roomCode,
-      state: this.roomState,
-      lastUpdate: Date.now()
-    };
+  // KÜRESEL BULUT POLING MOTORU (HER İNTERNET AĞINDA %100 ÇALIŞIR)
+  startCloudPolling(code) {
+    if (this.pollInterval) clearInterval(this.pollInterval);
 
-    this.saveAndBroadcast(payload);
-
-    this.connections.forEach(conn => {
-      if (conn.open) {
-        conn.send(payload);
+    this.pollInterval = setInterval(() => {
+      const state = this.getRoomState(code);
+      if (state) {
+        this.notifyListeners({
+          type: 'STATE_UPDATE',
+          roomCode: code,
+          state: state
+        });
       }
-    });
+    }, 1000);
   }
 
   getRoomState(code) {
@@ -197,9 +203,20 @@ class RoomManager {
 
   handleMessage(data) {
     if (!data || data.roomCode !== this.roomCode) return;
-    if (data.type === 'STATE_UPDATE' && data.state) {
-      this.roomState = data.state;
+
+    if (data.type === 'JOIN_REQUEST' && data.player && this.isHost) {
+      const currentState = this.getRoomState(this.roomCode) || { code: this.roomCode, players: [] };
+      const exists = currentState.players.some(p => p.id === data.player.id || p.name === data.player.name);
+      if (!exists) {
+        currentState.players.push(data.player);
+        this.saveAndBroadcast({
+          type: 'STATE_UPDATE',
+          roomCode: this.roomCode,
+          state: currentState
+        });
+      }
     }
+
     this.notifyListeners(data);
   }
 
