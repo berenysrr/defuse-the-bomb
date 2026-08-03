@@ -43,7 +43,7 @@ export default function Lobby() {
     }
   }, []);
 
-  // KÜRESEL CANLI ODA DİNLEYİCİSİ (REALTIME SYNC)
+  // KÜRESEL CANLI ODA DİNLEYİCİSİ (WEBRTC REALTIME SYNC)
   useEffect(() => {
     const unsubscribe = roomManager.subscribe((payload) => {
       if (!payload) return;
@@ -124,7 +124,7 @@ export default function Lobby() {
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
-  // 2. Tam Davet Linkini Kopyala (GitHub Pages için Tam Repo Adresi Garantilendi /defuse-the-bomb/#room=XXXX)
+  // 2. Tam Davet Linkini Kopyala
   const copyFullLink = () => {
     let link;
     if (window.location.hostname.includes('github.io')) {
@@ -142,6 +142,10 @@ export default function Lobby() {
   // Oyunu Başlat
   const handleStartGame = async () => {
     if (mode === 'ROOM_WAIT') {
+      if (joinedPlayers.length < 2) {
+        alert("En az 2 oyuncu odaya katılmalıdır! Lütfen diğer oyuncunun odaya katılmasını bekleyin.");
+        return;
+      }
       await roomManager.startGameBroadcast(joinedPlayers);
       startGame(joinedPlayers, roomCode);
     } else {
@@ -417,9 +421,16 @@ export default function Lobby() {
           </div>
 
           {isHost ? (
-            <button onClick={handleStartGame} style={{ width: '100%', padding: '16px', background: 'linear-gradient(135deg, #ef4444, #b91c1c)', color: '#fff', fontWeight: 'bold', fontSize: '18px', border: 'none', borderRadius: '14px', cursor: 'pointer', boxShadow: '0 10px 25px rgba(239, 68, 68, 0.5)' }}>
-              🎮 OYUNU BAŞLAT! (HOST)
-            </button>
+            joinedPlayers.length >= 2 ? (
+              <button onClick={handleStartGame} style={{ width: '100%', padding: '16px', background: 'linear-gradient(135deg, #ef4444, #b91c1c)', color: '#fff', fontWeight: 'bold', fontSize: '18px', border: 'none', borderRadius: '14px', cursor: 'pointer', boxShadow: '0 10px 25px rgba(239, 68, 68, 0.5)' }}>
+                🎮 OYUNU BAŞLAT! (HOST)
+              </button>
+            ) : (
+              <div style={{ padding: '16px', borderRadius: '14px', background: 'rgba(245, 158, 11, 0.15)', border: '1.5px solid #f59e0b', color: '#fde047', fontWeight: 'bold', fontSize: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                <Loader size={20} className="spin" />
+                <span>⏳ ODAYA EN AZ 1 OYUNCUNUN DAHA KATILMASI BEKLENİYOR ({joinedPlayers.length}/2)...</span>
+              </div>
+            )
           ) : (
             <div style={{ padding: '16px', borderRadius: '14px', background: 'rgba(6, 182, 212, 0.15)', border: '1.5px solid #06b6d4', color: '#67e8f9', fontWeight: 'bold', fontSize: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
               <Loader size={20} className="spin" />

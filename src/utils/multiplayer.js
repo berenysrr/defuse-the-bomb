@@ -1,19 +1,16 @@
-// %100 CANLI REALTIME MQTT WEBSOCKET MULTIPLAYER ODA MOTORU (ZERO-LATENCY INSTANT SYNC)
+// %100 DOĞRUDAN WEBRTC P2P CİHAZDAN CİHAZA MULTIPLAYER ODA MOTORU (PEERJS)
 
-import mqtt from 'mqtt';
-
-const MQTT_BROKERS = [
-  'wss://broker.emqx.io:8084/mqtt',
-  'wss://test.mosquitto.org:8081/mqtt'
-];
+import Peer from 'peerjs';
 
 class RoomManager {
   constructor() {
     this.roomCode = null;
     this.isHost = false;
     this.myPlayer = null;
+    this.peer = null;
+    this.connections = []; // Host: Bağlanan tüm katılımcılar
+    this.hostConn = null; // Joiner: Kurucuya olan bağlantı
     this.listeners = [];
-    this.client = null;
 
     this.roomState = {
       code: null,
@@ -21,51 +18,6 @@ class RoomManager {
       gameState: 'LOBBY',
       inGameState: null
     };
-  }
-
-  // MQTT WebSocket Bağlantısını Başlat
-  initMQTT(code) {
-    if (this.client) {
-      try { this.client.end(); } catch (e) {}
-    }
-
-    const topic = `defuse_bomb/room/${code}`;
-    let brokerIdx = 0;
-
-    const connectToBroker = (url) => {
-      try {
-        this.client = mqtt.connect(url, {
-          clientId: `defuse_player_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          keepalive: 30,
-          reconnectPeriod: 2000,
-          connectTimeout: 5000
-        });
-
-        this.client.on('connect', () => {
-          console.log("MQTT WebSocket Canlı Bağlantı Kuruldu:", url);
-          this.client.subscribe(topic, { qos: 1 });
-
-          // Bağlantı kurulduğu an mevcut durumunu duyur
-          if (this.roomState && this.roomState.players.length > 0) {
-            this.publishStateUpdate();
-          }
-        });
-
-        this.client.on('message', (t, messageBuffer) => {
-          try {
-            const payload = JSON.parse(messageBuffer.toString());
-            this.handlePayload(payload);
-          } catch (e) {}
-        });
-
-        this.client.on('error', () => {
-          brokerIdx = (brokerIdx + 1) % MQTT_BROKERS.length;
-          connectToBroker(MQTT_BROKERS[brokerIdx]);
-        });
-      } catch (e) {}
-    };
-
-    connectToBroker(MQTT_BROKERS[0]);
   }
 
   // 1. ODA OLUŞTUR (Host)
@@ -90,8 +42,37 @@ class RoomManager {
       inGameState: null
     };
 
-    // MQTT WebSocket başlat
-    this.initMQTT(code);
+    if (this.peer) {
+      try { this.peer.destroy(); } catch (e) {}
+    }
+
+    // WebRTC PeerJS Oda Sunucusu Oluştur
+    const peerId = `defuse_room_${code}`;
+    this.peer = new Peer(peerId);
+    this.connections = [];
+
+    this.peer.on('open', (id) => {
+      console.log('Host WebRTC Oda Açıldı:', id);
+    });
+
+    // Yeni Oyuncu Katıldığında (P2P Handshake)
+    this.peer.on('connection', (conn) => {
+      console.log('Yeni Oyuncu bağlandı!');
+      this.connections.push(conn);
+
+      conn.on('data', (data) => {
+        this.handlePayload(data);
+      });
+
+      // Bağlantı açıldığı an mevcut güncel oda durumunu katılana gönder
+      conn.on('open', () => {
+        conn.send({
+          type: 'STATE_UPDATE',
+          roomCode: code,
+          state: this.roomState
+        });
+      });
+    });
 
     this.notifyListeners({
       type: 'STATE_UPDATE',
@@ -123,18 +104,30 @@ class RoomManager {
       inGameState: null
     };
 
-    // MQTT WebSocket başlat
-    this.initMQTT(cleanCode);
+    if (this.peer) {
+      try { this.peer.destroy(); } catch (e) {}
+    }
 
-    // Odaya katıldığını yayınla
-    const joinPayload = {
-      type: 'JOIN_REQUEST',
-      roomCode: cleanCode,
-      player: joinerObj
-    };
+    this.peer = new Peer();
 
-    setTimeout(() => this.publishPayload(joinPayload), 300);
-    setTimeout(() => this.publishPayload(joinPayload), 1000);
+    this.peer.on('open', () => {
+      // Doğrudan Host'un cihazına WebRTC ile bağlan
+      const conn = this.peer.connect(`defuse_room_${cleanCode}`);
+      this.hostConn = conn;
+
+      conn.on('open', () => {
+        console.log('Host ile P2P Bağlantısı Sağlandı!');
+        conn.send({
+          type: 'JOIN_REQUEST',
+          roomCode: cleanCode,
+          player: joinerObj
+        });
+      });
+
+      conn.on('data', (data) => {
+        this.handlePayload(data);
+      });
+    });
 
     this.notifyListeners({
       type: 'STATE_UPDATE',
@@ -145,7 +138,7 @@ class RoomManager {
     return this.roomState;
   }
 
-  // Akıllı Oyuncu Birleştirme Motoru (ID bazlı)
+  // Oyuncu Birleştirme (Benzersiz ID + myPlayer Koruması)
   mergePlayerLists(listA = [], listB = []) {
     const merged = [...listA];
 
@@ -165,20 +158,17 @@ class RoomManager {
     return merged;
   }
 
-  publishStateUpdate() {
-    this.publishPayload({
-      type: 'STATE_UPDATE',
-      roomCode: this.roomCode,
-      state: this.roomState
-    });
-  }
-
+  // Veri Yayınlama (Host -> Tüm Katılanlara, Joiner -> Host'a)
   publishPayload(payload) {
-    if (!this.client || !this.roomCode) return;
-    const topic = `defuse_bomb/room/${this.roomCode}`;
-    try {
-      this.client.publish(topic, JSON.stringify(payload), { qos: 1 });
-    } catch (e) {}
+    if (this.isHost) {
+      this.connections.forEach(conn => {
+        if (conn && conn.open) {
+          try { conn.send(payload); } catch (e) {}
+        }
+      });
+    } else if (this.hostConn && this.hostConn.open) {
+      try { this.hostConn.send(payload); } catch (e) {}
+    }
   }
 
   // 3. OYUNU BAŞLAT (Host)
@@ -215,17 +205,21 @@ class RoomManager {
     this.notifyListeners(payload);
   }
 
-  // GELEN PAYLOAD'LARI ANINDA İŞLE
+  // GELEN P2P VERİLERİNİ İŞLE
   handlePayload(payload) {
-    if (!payload || payload.roomCode !== this.roomCode) return;
+    if (!payload) return;
 
-    // A) Yeni Katılan Oyuncu İsteyi Geldiğinde (Host için)
+    // A) Katılan Oyuncu İsteyi (Host Tarafında)
     if (payload.type === 'JOIN_REQUEST' && payload.player) {
       const merged = this.mergePlayerLists(this.roomState.players, [payload.player]);
       this.roomState.players = merged;
 
       if (this.isHost) {
-        this.publishStateUpdate();
+        this.publishPayload({
+          type: 'STATE_UPDATE',
+          roomCode: this.roomCode,
+          state: this.roomState
+        });
       }
 
       this.notifyListeners({
@@ -235,7 +229,7 @@ class RoomManager {
       });
     }
 
-    // B) Güncel Oda Durumu Geldiğinde
+    // B) Güncel Oda Durumu (Katılan Tarafında)
     if (payload.type === 'STATE_UPDATE' && payload.state && Array.isArray(payload.state.players)) {
       const merged = this.mergePlayerLists(this.roomState.players, payload.state.players);
       this.roomState = {
@@ -250,7 +244,7 @@ class RoomManager {
       });
     }
 
-    // C) Oyunu Başlat Emri Geldiğinde
+    // C) Oyunu Başlat Emri
     if (payload.type === 'GAME_START') {
       this.roomState.gameState = 'PLAYING';
       if (payload.players && payload.players.length > 0) {
