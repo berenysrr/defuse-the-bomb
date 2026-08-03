@@ -48,9 +48,9 @@ export default function Lobby() {
       if (!payload) return;
 
       // 1. Oda durumu güncellendiğinde oyuncu listesini yenile
-      if (payload.type === 'STATE_UPDATE' && payload.state) {
-        if (payload.state.players && payload.state.players.length > 0) {
-          setJoinedPlayers([...payload.state.players]);
+      if (payload.type === 'STATE_UPDATE') {
+        if (roomManager.roomState && Array.isArray(roomManager.roomState.players)) {
+          setJoinedPlayers([...roomManager.roomState.players]);
         }
       }
 
