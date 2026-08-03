@@ -6,7 +6,7 @@ import MiniGameCard from './components/MiniGameCard';
 import Leaderboard from './components/Leaderboard';
 import PlayerHand from './components/PlayerHand';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trophy, RotateCcw, Scissors } from 'lucide-react';
+import { Trophy, RotateCcw, Scissors, Home, Award, Heart, Sparkles } from 'lucide-react';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -47,6 +47,7 @@ function GameBoard() {
   const { 
     gameState, 
     startGame, 
+    returnToLobby,
     players, 
     turnIndex, 
     timeLeft, 
@@ -54,6 +55,7 @@ function GameBoard() {
     wireEffect, 
     lastPlayedCard,
     currentQuestion, 
+    isMyTurn,
     handleMiniGameResult 
   } = useGame();
 
@@ -67,59 +69,95 @@ function GameBoard() {
   const safeTimeLeft = typeof timeLeft === 'number' && !isNaN(timeLeft) ? timeLeft : 60;
   const safeWires = Array.isArray(wires) ? wires : [];
 
+  // LÜKS VE MODERN SONUÇ EKRANI (GAME OVER RESULTS SCREEN)
   if (gameState === 'GAME_OVER') {
-    const winner = safePlayers.find(p => p.lives > 0) || safePlayers[0];
+    // Oyuncuları Skor ve Can değerine göre podyuma diz
+    const sortedPodium = [...safePlayers].sort((a, b) => {
+      const livesA = typeof a?.lives === 'number' ? a.lives : 0;
+      const livesB = typeof b?.lives === 'number' ? b.lives : 0;
+      if (livesB !== livesA) return livesB - livesA;
+      return (b?.score || 0) - (a?.score || 0);
+    });
+
+    const winner = sortedPodium[0] || { name: 'Şampiyon', avatar: { icon: '🏆' }, score: 0 };
+    const runnerUp = sortedPodium[1];
+    const thirdPlace = sortedPodium[2];
+
     return (
-      <div className="modern-arena-wrapper" style={{ justifyContent: 'center' }}>
+      <div style={{ maxWidth: '820px', width: '92vw', margin: '30px auto', color: '#f8fafc', textAlign: 'center' }}>
+        
+        {/* ŞAMPİYONLUK BANNERİ */}
         <motion.div
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="glass-panel-modern"
-          style={{ padding: '50px 40px', textAlign: 'center', maxWidth: '500px', width: '90%', border: '3px solid #f59e0b', boxShadow: '0 0 60px rgba(245, 158, 11, 0.6)', margin: '0 auto' }}
+          initial={{ opacity: 0, y: -30 }}
+          animate={{ opacity: 1, y: 0 }}
+          style={{ background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(2, 6, 23, 0.9))', padding: '30px 20px', borderRadius: '24px', border: '2px solid #f59e0b', boxShadow: '0 0 50px rgba(245, 158, 11, 0.4)', marginBottom: '24px' }}
         >
-          <motion.div animate={{ rotate: [0, -10, 10, 0], scale: [1, 1.15, 1] }} transition={{ repeat: Infinity, duration: 1.5 }}>
-            <Trophy size={88} color="#f59e0b" style={{ filter: 'drop-shadow(0 0 35px #f59e0b)', marginBottom: '20px' }} />
+          <motion.div animate={{ rotate: [0, -10, 10, 0], scale: [1, 1.12, 1] }} transition={{ repeat: Infinity, duration: 2 }}>
+            <Trophy size={80} color="#f59e0b" style={{ filter: 'drop-shadow(0 0 30px #f59e0b)', marginBottom: '10px' }} />
           </motion.div>
-          
-          <h1 style={{ color: '#f59e0b', fontSize: '42px', letterSpacing: '3px', margin: '0 0 8px 0' }}>
-            ŞAMPİYON!
+
+          <h1 style={{ color: '#fde047', fontSize: '38px', letterSpacing: '4px', margin: '0 0 8px 0', textShadow: '0 0 20px rgba(253, 224, 71, 0.7)' }}>
+            ŞAMPİYONLUK PODYUMU
           </h1>
-
-          <div style={{ fontSize: '56px', marginBottom: '10px' }}>
-            {winner?.avatar?.icon || '🏆'}
-          </div>
-
-          <h2 style={{ color: '#f8fafc', fontSize: '32px', marginBottom: '20px' }}>
-            {winner?.name || 'Oyuncu'}
-          </h2>
-
-          <p style={{ color: '#94a3b8', marginBottom: '32px', fontSize: '16px' }}>
-            Tüm rakipleri eledin ve masadaki tek şampiyon sen oldun! 🏆
+          <p style={{ color: '#94a3b8', fontSize: '15px', margin: 0 }}>
+            Tüm patlayıcı kablolar kesildi ve zafer sahibi belirlendi!
           </p>
+        </motion.div>
 
-          <motion.button
-            whileHover={{ scale: 1.06 }}
-            whileTap={{ scale: 0.94 }}
+        {/* 🏆 PODYUM DERECELERİ (1., 2., 3. SIRA) */}
+        <div style={{ display: 'grid', gridTemplateColumns: sortedPodium.length >= 3 ? '1fr 1.2fr 1fr' : '1fr 1.2fr', gap: '14px', alignItems: 'end', marginBottom: '28px' }}>
+          
+          {/* 🥈 2. İKİNCİ SIRA */}
+          {runnerUp && (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} style={{ background: '#0f172a', border: '2px solid #94a3b8', padding: '20px 14px', borderRadius: '20px', boxShadow: '0 0 20px rgba(148, 163, 184, 0.3)' }}>
+              <div style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 'bold', marginBottom: '6px' }}>🥈 2. İKİNCİ</div>
+              <div style={{ fontSize: '42px', marginBottom: '4px' }}>{runnerUp.avatar?.icon || '🤖'}</div>
+              <h3 style={{ margin: '0 0 6px 0', fontSize: '18px', color: '#f8fafc' }}>{runnerUp.name}</h3>
+              <div style={{ fontSize: '13px', color: '#cbd5e1', fontWeight: 'bold' }}>{runnerUp.score || 0} Puan</div>
+            </motion.div>
+          )}
+
+          {/* 🥇 1. BÜYÜK KAZANAN (ALTIN PODYUM) */}
+          <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.1 }} style={{ background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.25), #0f172a)', border: '3px solid #f59e0b', padding: '30px 16px', borderRadius: '24px', boxShadow: '0 0 40px rgba(245, 158, 11, 0.6)', transform: 'translateY(-10px)' }}>
+            <div style={{ fontSize: '15px', color: '#fde047', fontWeight: '900', letterSpacing: '2px', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+              <Sparkles size={18} color="#fde047" /> 🥇 1. ŞAMPİYON
+            </div>
+            <div style={{ fontSize: '64px', marginBottom: '6px', filter: 'drop-shadow(0 0 20px #f59e0b)' }}>{winner.avatar?.icon || '👑'}</div>
+            <h2 style={{ margin: '0 0 8px 0', fontSize: '24px', color: '#ffffff', fontWeight: '900' }}>{winner.name}</h2>
+            <div style={{ fontSize: '16px', color: '#fde047', fontWeight: 'bold', marginBottom: '10px' }}>{winner.score || 0} Skor Puanı</div>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(239, 68, 68, 0.2)', border: '1px solid #ef4444', padding: '4px 12px', borderRadius: '12px', fontSize: '12px', color: '#fca5a5', fontWeight: 'bold' }}>
+              <Heart size={14} color="#ef4444" /> {winner.lives || 1} Can İle Tamamladı
+            </div>
+          </motion.div>
+
+          {/* 🥉 3. ÜÇÜNCÜ SIRA */}
+          {thirdPlace && (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} style={{ background: '#0f172a', border: '2px solid #b45309', padding: '20px 14px', borderRadius: '20px', boxShadow: '0 0 20px rgba(180, 83, 9, 0.3)' }}>
+              <div style={{ fontSize: '13px', color: '#b45309', fontWeight: 'bold', marginBottom: '6px' }}>🥉 3. ÜÇÜNCÜ</div>
+              <div style={{ fontSize: '42px', marginBottom: '4px' }}>{thirdPlace.avatar?.icon || '🐱'}</div>
+              <h3 style={{ margin: '0 0 6px 0', fontSize: '18px', color: '#f8fafc' }}>{thirdPlace.name}</h3>
+              <div style={{ fontSize: '13px', color: '#cbd5e1', fontWeight: 'bold' }}>{thirdPlace.score || 0} Puan</div>
+            </motion.div>
+          )}
+        </div>
+
+        {/* AKSİYON BUTONLARI */}
+        <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
+          <button
             onClick={() => startGame(safePlayers)}
-            style={{
-              padding: '16px 36px',
-              fontSize: '17px',
-              fontWeight: 'bold',
-              borderRadius: '14px',
-              border: 'none',
-              background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-              color: '#000000',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              margin: '0 auto',
-              boxShadow: '0 10px 25px rgba(245, 158, 11, 0.5)'
-            }}
+            style={{ flex: 1, padding: '16px', borderRadius: '14px', border: 'none', background: 'linear-gradient(135deg, #f59e0b, #b45309)', color: '#000', fontWeight: '900', fontSize: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 10px 25px rgba(245, 158, 11, 0.5)' }}
           >
             <RotateCcw size={20} /> YENİDEN OYNA
-          </motion.button>
-        </motion.div>
+          </button>
+
+          <button
+            onClick={returnToLobby}
+            style={{ flex: 1, padding: '16px', borderRadius: '14px', border: '1.5px solid #334155', background: '#0f172a', color: '#fff', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+          >
+            <Home size={20} /> 🏠 LOBİYE DÖN
+          </button>
+        </div>
+
       </div>
     );
   }
@@ -127,7 +165,7 @@ function GameBoard() {
   return (
     <div className="modern-arena-wrapper">
       
-      {/* 🚀 1. ÜST BÖLÜM: LOGO VE SIRA BANNERİ */}
+      {/* 🚀 1. ÜST BÖLÜM: LOGO VE KULLANICI SIRA BANNERİ */}
       <div style={{ width: '100%', maxWidth: '800px', margin: '0 auto 12px auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         
         {/* LOGO VE AKTİF OYUNCU DUYURUSU */}
@@ -142,9 +180,9 @@ function GameBoard() {
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             style={{
-              background: 'linear-gradient(135deg, #f59e0b, #b45309)',
-              border: '2px solid #fef08a',
-              boxShadow: '0 0 25px rgba(245, 158, 11, 0.7)',
+              background: isMyTurn ? 'linear-gradient(135deg, #22c55e, #15803d)' : 'linear-gradient(135deg, #f59e0b, #b45309)',
+              border: `2px solid ${isMyTurn ? '#86efac' : '#fef08a'}`,
+              boxShadow: `0 0 25px ${isMyTurn ? 'rgba(34, 197, 94, 0.7)' : 'rgba(245, 158, 11, 0.7)'}`,
               padding: '8px 20px',
               borderRadius: '20px',
               display: 'flex',
@@ -156,11 +194,15 @@ function GameBoard() {
             }}
           >
             <span style={{ fontSize: '22px' }}>{activePlayer?.avatar?.icon || '🐵'}</span>
-            <span>SIRA: {(activePlayer?.name || 'OYUNCU').toUpperCase()} HAMLE YAPIYOR!</span>
+            <span>
+              {isMyTurn 
+                ? '👑 SENİN SIRAN! CEVABI SEÇ VE HAMLENİ YAP!' 
+                : `⏳ SIRA: ${(activePlayer?.name || 'OYUNCU').toUpperCase()} HAMLE YAPIYOR...`}
+            </span>
           </motion.div>
         </div>
 
-        {/* 🏆 CANLI MAÇ SIRALAMA TABLOSU (1., 2., 3., 4.) */}
+        {/* 🏆 CANLI MAÇ SIRALAMA TABLOSU */}
         <Leaderboard />
       </div>
 

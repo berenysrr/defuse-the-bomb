@@ -29,17 +29,7 @@ const QUESTION_BANK = [
   { id: 12, question: "Dünyanın en yüksek dağı hangisidir?", options: ["Ağrı Dağı", "Everest", "Alpler", "Kafdağı"], correct: 1 },
   { id: 13, question: "İstiklal Marşı'mızın şairi kimdir?", options: ["Ziya Gökalp", "Mehmet Akif Ersoy", "Namık Kemal", "Orhan Veli"], correct: 1 },
   { id: 14, question: "Hangisi uçabilen tek memeli hayvandır?", options: ["Yasa Tobi", "Yasa Kuşu", "Yasa Balığı", "Yasa Yarasa"], correct: 3 },
-  { id: 15, question: "Hangi organımız vücuda kan pompalar?", options: ["Akciğer", "Kalp", "Karaciğer", "Böbrek"], correct: 1 },
-  { id: 16, question: "Türkiye'nin en uzun nehri hangisidir?", options: ["Kızılırmak", "Yeşilırmak", "Fırat", "Dicle"], correct: 0 },
-  { id: 17, question: "Fatih Sultan Mehmet kaç yılında İstanbul'u fethetti?", options: ["1071", "1299", "1453", "1923"], correct: 2 },
-  { id: 18, question: "Periyodik tabloda 'O' simgesi hangi elementi temsil eder?", options: ["Oksijen", "Altın", "Demir", "Gümüş"], correct: 0 },
-  { id: 19, question: "Futbolda bir takım sahada aynı anda kaç oyuncu ile yer alır?", options: ["9", "10", "11", "12"], correct: 2 },
-  { id: 20, question: "Hangisi kış mevsimi ayıdır?", options: ["Ocak", "Nisan", "Temmuz", "Ekim"], correct: 0 },
-  { id: 21, question: "Dünyanın en büyük okyanusu hangisidir?", options: ["Atlas Okyanusu", "Büyük Okyanus (Pasifik)", "Hint Okyanusu", "Arktik Okyanusu"], correct: 1 },
-  { id: 22, question: "Gökkuşağında kaç renk bulunur?", options: ["5", "6", "7", "8"], correct: 2 },
-  { id: 23, question: "Piramitleri ile ünlü ülke hangisidir?", options: ["Yunanistan", "Mısır", "İtalya", "Çin"], correct: 1 },
-  { id: 24, question: "Mona Lisa tablosu hangi ressama aittir?", options: ["Picasso", "Van Gogh", "Leonardo da Vinci", "Salvador Dali"], correct: 2 },
-  { id: 25, question: "Telefonu kim icat etmiştir?", options: ["Graham Bell", "Edison", "Tesla", "Newton"], correct: 0 }
+  { id: 15, question: "Hangi organımız vücuda kan pompalar?", options: ["Akciğer", "Kalp", "Karaciğer", "Böbrek"], correct: 1 }
 ];
 
 const CARD_TYPES = [
@@ -66,9 +56,7 @@ export function GameProvider({ children }) {
 
   const [players, setPlayers] = useState([
     { id: 0, name: 'Çılgın Maymun', avatar: AVATARS[0], lives: 1, score: 0, hand: [], hasShield: false, isHost: true },
-    { id: 1, name: 'Cyber Robot', avatar: AVATARS[1], lives: 1, score: 0, hand: [], hasShield: false, isHost: false },
-    { id: 2, name: 'Ninja Kedi', avatar: AVATARS[2], lives: 1, score: 0, hand: [], hasShield: false, isHost: false },
-    { id: 3, name: 'Hacker Tilki', avatar: AVATARS[3], lives: 1, score: 0, hand: [], hasShield: false, isHost: false }
+    { id: 1, name: 'Cyber Robot', avatar: AVATARS[1], lives: 1, score: 0, hand: [], hasShield: false, isHost: false }
   ]);
 
   const [wires, setWires] = useState([
@@ -118,6 +106,11 @@ export function GameProvider({ children }) {
     });
   };
 
+  // SIRADAKİ HAMLE KENDİSİNİN Mİ? (isMyTurn Hesabı)
+  const activePlayer = Array.isArray(players) && players[turnIndex] ? players[turnIndex] : null;
+  const myPlayerId = roomManager.myPlayer?.id;
+  const isMyTurn = !activeRoomCode || (activePlayer && myPlayerId && String(activePlayer.id) === String(myPlayerId));
+
   const startGame = (customPlayerConfigs = [], roomCode = null) => {
     sounds.init();
     setGameState('PLAYING');
@@ -148,6 +141,11 @@ export function GameProvider({ children }) {
     setUsedQuestionIds([firstQ.id]);
 
     addLog(`💥 ANİ ÖLÜM RULETİ BAŞLADI! Yanlış kabloyu kesen anında patlar!`);
+  };
+
+  const returnToLobby = () => {
+    setGameState('LOBBY');
+    setActiveRoomCode(null);
   };
 
   // OYUN İÇİ GERÇEK ZAMANLI DİNLEYİCİ
@@ -359,10 +357,10 @@ export function GameProvider({ children }) {
     setPlayers(updatedPlayers);
 
     const alivePlayers = updatedPlayers.filter(p => p.lives > 0);
-    if (alivePlayers.length === 1) {
+    if (alivePlayers.length <= 1) {
       setGameState('GAME_OVER');
-      try { confetti({ particleCount: 150, spread: 80 }); } catch(e){}
-      addLog(`🏆 ŞAMPİYON: ${alivePlayers[0].name}! 🎉`);
+      try { confetti({ particleCount: 180, spread: 90 }); } catch(e){}
+      addLog(`🏆 ŞAMPİYON: ${alivePlayers[0]?.name || 'OYUNCU'}! 🎉`);
 
       syncInGameState({
         players: updatedPlayers,
@@ -493,7 +491,9 @@ export function GameProvider({ children }) {
         logs,
         lastPlayedCard,
         wireEffect,
+        isMyTurn,
         startGame,
+        returnToLobby,
         answerQuestion,
         handleMiniGameResult,
         playCard
