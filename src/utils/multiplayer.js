@@ -1,6 +1,18 @@
-// %100 DOĞRUDAN WEBRTC P2P CİHAZDAN CİHAZA MULTIPLAYER ODA MOTORU (PEERJS)
+// %100 GOOGLE STUN SUPPORTED WEBRTC P2P REALTIME MULTIPLAYER ODA MOTORU
 
 import Peer from 'peerjs';
+
+const PEER_CONFIG = {
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' }
+    ]
+  }
+};
 
 class RoomManager {
   constructor() {
@@ -8,8 +20,8 @@ class RoomManager {
     this.isHost = false;
     this.myPlayer = null;
     this.peer = null;
-    this.connections = []; // Host: Bağlanan tüm katılımcılar
-    this.hostConn = null; // Joiner: Kurucuya olan bağlantı
+    this.connections = []; // Host: Katılan tüm oyuncuların WebRTC kanalları
+    this.hostConn = null; // Joiner: Kurucuya olan WebRTC kanalı
     this.listeners = [];
 
     this.roomState = {
@@ -46,25 +58,25 @@ class RoomManager {
       try { this.peer.destroy(); } catch (e) {}
     }
 
-    // WebRTC PeerJS Oda Sunucusu Oluştur
+    // Google STUN Destekli PeerJS Oda Sunucusu
     const peerId = `defuse_room_${code}`;
-    this.peer = new Peer(peerId);
+    this.peer = new Peer(peerId, PEER_CONFIG);
     this.connections = [];
 
     this.peer.on('open', (id) => {
-      console.log('Host WebRTC Oda Açıldı:', id);
+      console.log('Host WebRTC STUN Oda Açıldı:', id);
     });
 
-    // Yeni Oyuncu Katıldığında (P2P Handshake)
+    // Yeni Oyuncu Bağlandığında (P2P NAT Traversal Handshake)
     this.peer.on('connection', (conn) => {
-      console.log('Yeni Oyuncu bağlandı!');
+      console.log('Katılan oyuncu WebRTC ile başarıyla bağlandı!');
       this.connections.push(conn);
 
       conn.on('data', (data) => {
         this.handlePayload(data);
       });
 
-      // Bağlantı açıldığı an mevcut güncel oda durumunu katılana gönder
+      // Bağlantı tamamlandığı an o anki güncel durumu katılana ilet
       conn.on('open', () => {
         conn.send({
           type: 'STATE_UPDATE',
@@ -108,25 +120,35 @@ class RoomManager {
       try { this.peer.destroy(); } catch (e) {}
     }
 
-    this.peer = new Peer();
+    this.peer = new Peer(PEER_CONFIG);
 
     this.peer.on('open', () => {
-      // Doğrudan Host'un cihazına WebRTC ile bağlan
-      const conn = this.peer.connect(`defuse_room_${cleanCode}`);
+      // Doğrudan Host'a Google STUN yardımıyla 4G/Wi-Fi fark etmeksizin bağlan
+      const conn = this.peer.connect(`defuse_room_${cleanCode}`, { reliable: true });
       this.hostConn = conn;
 
+      const sendJoin = () => {
+        if (conn.open) {
+          console.log('Host ile P2P WebRTC Bağlantısı Başarılı!');
+          conn.send({
+            type: 'JOIN_REQUEST',
+            roomCode: cleanCode,
+            player: joinerObj
+          });
+        }
+      };
+
       conn.on('open', () => {
-        console.log('Host ile P2P Bağlantısı Sağlandı!');
-        conn.send({
-          type: 'JOIN_REQUEST',
-          roomCode: cleanCode,
-          player: joinerObj
-        });
+        sendJoin();
       });
 
       conn.on('data', (data) => {
         this.handlePayload(data);
       });
+
+      // Ağ gecikmesine karşı 1sn ve 2sn sonra el sıkışmayı tekrarla
+      setTimeout(sendJoin, 1000);
+      setTimeout(sendJoin, 2000);
     });
 
     this.notifyListeners({
@@ -138,7 +160,7 @@ class RoomManager {
     return this.roomState;
   }
 
-  // Oyuncu Birleştirme (Benzersiz ID + myPlayer Koruması)
+  // Oyuncu Birleştirme Motoru
   mergePlayerLists(listA = [], listB = []) {
     const merged = [...listA];
 
