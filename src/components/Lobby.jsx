@@ -124,11 +124,16 @@ export default function Lobby() {
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
-  // 2. Tam Davet Linkini Kopyala (HASH ROUTING: GitHub Pages 404 Engellendi #room=XXXX)
+  // 2. Tam Davet Linkini Kopyala (GitHub Pages için Tam Repo Adresi Garantilendi /defuse-the-bomb/#room=XXXX)
   const copyFullLink = () => {
-    const baseUrl = window.location.href.split('#')[0].split('?')[0];
-    const cleanBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-    const link = `${cleanBase}#room=${roomCode}`;
+    let link;
+    if (window.location.hostname.includes('github.io')) {
+      link = `https://berenysrr.github.io/defuse-the-bomb/#room=${roomCode}`;
+    } else {
+      const baseUrl = window.location.href.split('#')[0].split('?')[0];
+      const cleanBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+      link = `${cleanBase}#room=${roomCode}`;
+    }
     navigator.clipboard.writeText(link);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
