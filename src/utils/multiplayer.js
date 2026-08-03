@@ -1,4 +1,11 @@
-// %100 KESİN KÜRESEL GERÇEK ZAMANLI MULTIPLAYER ODA MOTORU (TIMEOUT PROTECTED NTFY RELAY)
+// %100 CANLI REALTIME MQTT WEBSOCKET MULTIPLAYER ODA MOTORU (ZERO-LATENCY INSTANT SYNC)
+
+import mqtt from 'mqtt';
+
+const MQTT_BROKERS = [
+  'wss://broker.emqx.io:8084/mqtt',
+  'wss://test.mosquitto.org:8081/mqtt'
+];
 
 class RoomManager {
   constructor() {
@@ -6,8 +13,7 @@ class RoomManager {
     this.isHost = false;
     this.myPlayer = null;
     this.listeners = [];
-    this.pollInterval = null;
-    this.processedMsgIds = new Set();
+    this.client = null;
 
     this.roomState = {
       code: null,
@@ -15,6 +21,51 @@ class RoomManager {
       gameState: 'LOBBY',
       inGameState: null
     };
+  }
+
+  // MQTT WebSocket Bağlantısını Başlat
+  initMQTT(code) {
+    if (this.client) {
+      try { this.client.end(); } catch (e) {}
+    }
+
+    const topic = `defuse_bomb/room/${code}`;
+    let brokerIdx = 0;
+
+    const connectToBroker = (url) => {
+      try {
+        this.client = mqtt.connect(url, {
+          clientId: `defuse_player_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          keepalive: 30,
+          reconnectPeriod: 2000,
+          connectTimeout: 5000
+        });
+
+        this.client.on('connect', () => {
+          console.log("MQTT WebSocket Canlı Bağlantı Kuruldu:", url);
+          this.client.subscribe(topic, { qos: 1 });
+
+          // Bağlantı kurulduğu an mevcut durumunu duyur
+          if (this.roomState && this.roomState.players.length > 0) {
+            this.publishStateUpdate();
+          }
+        });
+
+        this.client.on('message', (t, messageBuffer) => {
+          try {
+            const payload = JSON.parse(messageBuffer.toString());
+            this.handlePayload(payload);
+          } catch (e) {}
+        });
+
+        this.client.on('error', () => {
+          brokerIdx = (brokerIdx + 1) % MQTT_BROKERS.length;
+          connectToBroker(MQTT_BROKERS[brokerIdx]);
+        });
+      } catch (e) {}
+    };
+
+    connectToBroker(MQTT_BROKERS[0]);
   }
 
   // 1. ODA OLUŞTUR (Host)
@@ -39,15 +90,8 @@ class RoomManager {
       inGameState: null
     };
 
-    // Bulut polling başlat
-    this.startCloudPolling(code);
-
-    // Buluta odayı duyur
-    this.publishToCloud(code, {
-      type: 'STATE_UPDATE',
-      roomCode: code,
-      state: this.roomState
-    });
+    // MQTT WebSocket başlat
+    this.initMQTT(code);
 
     this.notifyListeners({
       type: 'STATE_UPDATE',
@@ -72,55 +116,36 @@ class RoomManager {
 
     this.myPlayer = joinerObj;
 
-    // Bulut polling başlat
-    this.startCloudPolling(cleanCode);
-
-    // Bulut geçmişini hızlıca tara (1.5s zaman aşımlı)
-    const historyMessages = await this.fetchCloudHistory(cleanCode);
-    let allFoundPlayers = [joinerObj];
-
-    if (historyMessages && historyMessages.length > 0) {
-      historyMessages.forEach(msg => {
-        if (msg && msg.state && Array.isArray(msg.state.players)) {
-          allFoundPlayers = this.mergePlayerLists(allFoundPlayers, msg.state.players);
-        }
-        if (msg && msg.player) {
-          allFoundPlayers = this.mergePlayerLists(allFoundPlayers, [msg.player]);
-        }
-      });
-    }
-
     this.roomState = {
       code: cleanCode,
-      players: allFoundPlayers,
+      players: [joinerObj],
       gameState: 'LOBBY',
       inGameState: null
     };
 
-    const updatePayload = {
-      type: 'STATE_UPDATE',
-      roomCode: cleanCode,
-      state: this.roomState
-    };
+    // MQTT WebSocket başlat
+    this.initMQTT(cleanCode);
 
+    // Odaya katıldığını yayınla
     const joinPayload = {
       type: 'JOIN_REQUEST',
       roomCode: cleanCode,
-      player: joinerObj,
-      state: this.roomState
+      player: joinerObj
     };
 
-    this.publishToCloud(cleanCode, joinPayload);
-    this.publishToCloud(cleanCode, updatePayload);
+    setTimeout(() => this.publishPayload(joinPayload), 300);
+    setTimeout(() => this.publishPayload(joinPayload), 1000);
 
-    setTimeout(() => this.publishToCloud(cleanCode, updatePayload), 500);
-    setTimeout(() => this.publishToCloud(cleanCode, updatePayload), 1200);
+    this.notifyListeners({
+      type: 'STATE_UPDATE',
+      roomCode: cleanCode,
+      state: this.roomState
+    });
 
-    this.notifyListeners(updatePayload);
     return this.roomState;
   }
 
-  // Sadece Benzersiz ID İle Oyuncu Birleştirme + myPlayer Koruma
+  // Akıllı Oyuncu Birleştirme Motoru (ID bazlı)
   mergePlayerLists(listA = [], listB = []) {
     const merged = [...listA];
 
@@ -140,15 +165,28 @@ class RoomManager {
     return merged;
   }
 
+  publishStateUpdate() {
+    this.publishPayload({
+      type: 'STATE_UPDATE',
+      roomCode: this.roomCode,
+      state: this.roomState
+    });
+  }
+
+  publishPayload(payload) {
+    if (!this.client || !this.roomCode) return;
+    const topic = `defuse_bomb/room/${this.roomCode}`;
+    try {
+      this.client.publish(topic, JSON.stringify(payload), { qos: 1 });
+    } catch (e) {}
+  }
+
   // 3. OYUNU BAŞLAT (Host)
   async startGameBroadcast(players, initialInGameState = null) {
     if (!this.roomCode) return;
 
     this.roomState.gameState = 'PLAYING';
     this.roomState.players = players;
-    if (initialInGameState) {
-      this.roomState.inGameState = initialInGameState;
-    }
 
     const payload = {
       type: 'GAME_START',
@@ -157,7 +195,7 @@ class RoomManager {
       inGameState: initialInGameState
     };
 
-    this.publishToCloud(this.roomCode, payload);
+    this.publishPayload(payload);
     this.notifyListeners(payload);
   }
 
@@ -173,76 +211,21 @@ class RoomManager {
       inGameState: inGameStatePayload
     };
 
-    this.publishToCloud(this.roomCode, payload);
+    this.publishPayload(payload);
     this.notifyListeners(payload);
   }
 
-  // 5. KÜRESEL BULUT SORGULAMA MOTORU (HER 400MS)
-  startCloudPolling(code) {
-    if (this.pollInterval) clearInterval(this.pollInterval);
-
-    const pollCloud = async () => {
-      if (!this.roomCode) return;
-      const messages = await this.fetchCloudHistory(code);
-
-      messages.forEach(msg => {
-        if (msg && msg.msgId && !this.processedMsgIds.has(msg.msgId)) {
-          this.processedMsgIds.add(msg.msgId);
-          this.handleCloudPayload(msg);
-        }
-      });
-    };
-
-    pollCloud();
-    this.pollInterval = setInterval(pollCloud, 400);
-  }
-
-  // Buluttan Son Mesajları Çekme (1.5 Sanıye AbortController Zaman Aşımlı)
-  async fetchCloudHistory(code) {
-    const list = [];
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 1500);
-
-      const res = await fetch(`https://ntfy.sh/defuse_bomb_room_${code}/json?poll=1&since=15m`, {
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-
-      if (!res.ok) return list;
-
-      const text = await res.text();
-      const lines = text.trim().split('\n');
-
-      lines.forEach(line => {
-        if (!line) return;
-        try {
-          const rawObj = JSON.parse(line);
-          if (rawObj && rawObj.message) {
-            const payload = JSON.parse(rawObj.message);
-            payload.msgId = rawObj.id;
-            list.push(payload);
-          }
-        } catch (e) {}
-      });
-    } catch (e) {}
-    return list;
-  }
-
-  handleCloudPayload(payload) {
+  // GELEN PAYLOAD'LARI ANINDA İŞLE
+  handlePayload(payload) {
     if (!payload || payload.roomCode !== this.roomCode) return;
 
-    // A) Katılım Talebi Geldiğinde Listeyi Birleştir
+    // A) Yeni Katılan Oyuncu İsteyi Geldiğinde (Host için)
     if (payload.type === 'JOIN_REQUEST' && payload.player) {
-      const mergedPlayers = this.mergePlayerLists(this.roomState.players, [payload.player]);
-      this.roomState.players = mergedPlayers;
+      const merged = this.mergePlayerLists(this.roomState.players, [payload.player]);
+      this.roomState.players = merged;
 
       if (this.isHost) {
-        this.publishToCloud(this.roomCode, {
-          type: 'STATE_UPDATE',
-          roomCode: this.roomCode,
-          state: this.roomState
-        });
+        this.publishStateUpdate();
       }
 
       this.notifyListeners({
@@ -252,12 +235,12 @@ class RoomManager {
       });
     }
 
-    // B) Güncel Oda Durumu Geldiğinde Birleştir
+    // B) Güncel Oda Durumu Geldiğinde
     if (payload.type === 'STATE_UPDATE' && payload.state && Array.isArray(payload.state.players)) {
-      const mergedPlayers = this.mergePlayerLists(this.roomState.players, payload.state.players);
+      const merged = this.mergePlayerLists(this.roomState.players, payload.state.players);
       this.roomState = {
         ...payload.state,
-        players: mergedPlayers
+        players: merged
       };
 
       this.notifyListeners({
@@ -267,7 +250,7 @@ class RoomManager {
       });
     }
 
-    // C) Oyunu Başlat Bildirimi
+    // C) Oyunu Başlat Emri Geldiğinde
     if (payload.type === 'GAME_START') {
       this.roomState.gameState = 'PLAYING';
       if (payload.players && payload.players.length > 0) {
@@ -281,7 +264,7 @@ class RoomManager {
       });
     }
 
-    // D) Oyun İçi Canlı Senkronizasyon
+    // D) Canlı Hamle Senkronizasyonu
     if (payload.type === 'GAME_STATE_UPDATE' && payload.inGameState) {
       this.roomState.inGameState = payload.inGameState;
       this.notifyListeners({
@@ -290,22 +273,6 @@ class RoomManager {
         inGameState: payload.inGameState
       });
     }
-  }
-
-  // Buluta Mesaj Gönder (2 Sanıye AbortController Zaman Aşımlı)
-  async publishToCloud(code, payload) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
-
-      await fetch(`https://ntfy.sh/defuse_bomb_room_${code}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(payload),
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-    } catch (e) {}
   }
 
   subscribe(callback) {
