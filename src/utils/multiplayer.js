@@ -1,4 +1,4 @@
-// %100 GERÇEK ZAMANLI KÜRESEL ODA VE OYUN İÇİ SENKRONİZASYON MOTORU
+// %100 GERÇEK ZAMANLI MÜKEMMEL KÜRESEL MULTIPLAYER ODA MOTORU (MERGER ENGINE)
 
 class RoomManager {
   constructor() {
@@ -22,10 +22,12 @@ class RoomManager {
     this.roomCode = code;
     this.isHost = true;
 
+    const hostObj = { ...hostPlayerConfig, isHost: true };
+
     this.roomState = {
       code,
-      hostId: hostPlayerConfig.id,
-      players: [hostPlayerConfig],
+      hostId: hostObj.id,
+      players: [hostObj],
       gameState: 'LOBBY',
       inGameState: null
     };
@@ -33,7 +35,7 @@ class RoomManager {
     // Bulut polling başlat
     this.startCloudPolling(code);
 
-    // Odanın kurulduğunu yayınla
+    // Buluta yeni odayı duyur
     await this.publishToCloud(code, {
       type: 'STATE_UPDATE',
       roomCode: code,
@@ -55,41 +57,32 @@ class RoomManager {
     this.roomCode = cleanCode;
     this.isHost = false;
 
+    const joinerObj = { ...playerConfig, isHost: false };
+
     // Bulut polling başlat
     this.startCloudPolling(cleanCode);
 
-    // Bulut geçmişini tara
+    // Bulut geçmişindeki tüm kayıtlı oyuncuları çek ve birleştir
     const historyMessages = await this.fetchCloudHistory(cleanCode);
-    let hostState = null;
+    let allFoundPlayers = [joinerObj];
 
     if (historyMessages && historyMessages.length > 0) {
-      for (let i = historyMessages.length - 1; i >= 0; i--) {
-        const msg = historyMessages[i];
-        if (msg && msg.type === 'STATE_UPDATE' && msg.state && msg.state.players) {
-          hostState = msg.state;
-          break;
+      historyMessages.forEach(msg => {
+        if (msg && msg.state && Array.isArray(msg.state.players)) {
+          allFoundPlayers = this.mergePlayerLists(allFoundPlayers, msg.state.players);
         }
-      }
+        if (msg && msg.player) {
+          allFoundPlayers = this.mergePlayerLists(allFoundPlayers, [msg.player]);
+        }
+      });
     }
 
-    if (hostState && hostState.players && hostState.players.length > 0) {
-      const combined = [...hostState.players];
-      const exists = combined.some(p => p.id === playerConfig.id || p.name === playerConfig.name);
-      if (!exists) {
-        combined.push(playerConfig);
-      }
-      this.roomState = {
-        ...hostState,
-        players: combined
-      };
-    } else {
-      this.roomState = {
-        code: cleanCode,
-        players: [playerConfig],
-        gameState: 'LOBBY',
-        inGameState: null
-      };
-    }
+    this.roomState = {
+      code: cleanCode,
+      players: allFoundPlayers,
+      gameState: 'LOBBY',
+      inGameState: null
+    };
 
     const updatePayload = {
       type: 'STATE_UPDATE',
@@ -97,12 +90,36 @@ class RoomManager {
       state: this.roomState
     };
 
-    // Buluta yeni durumu yayınla
+    // Katılım talebini ve güncellenmiş oyuncu listesini buluta yayınla
+    await this.publishToCloud(cleanCode, {
+      type: 'JOIN_REQUEST',
+      roomCode: cleanCode,
+      player: joinerObj,
+      state: this.roomState
+    });
+
     await this.publishToCloud(cleanCode, updatePayload);
     setTimeout(() => this.publishToCloud(cleanCode, updatePayload), 500);
 
     this.notifyListeners(updatePayload);
     return this.roomState;
+  }
+
+  // Oyuncu listelerini hiçbir oyuncuyu kaybetmeden akıllıca birleştirme (MERGER ENGINE)
+  mergePlayerLists(listA = [], listB = []) {
+    const merged = [...listA];
+
+    listB.forEach(item => {
+      if (!item) return;
+      const exists = merged.some(p => p.id === item.id || p.name === item.name);
+      if (!exists) {
+        merged.push(item);
+      }
+    });
+
+    // Kurucuyu (isHost: true) her zaman listenin en başına (index 0) yerleştir
+    merged.sort((a, b) => (b.isHost ? 1 : 0) - (a.isHost ? 1 : 0));
+    return merged;
   }
 
   // 3. OYUNU BAŞLAT (Host)
@@ -142,7 +159,7 @@ class RoomManager {
     this.notifyListeners(payload);
   }
 
-  // 5. BULUT SORGULAMA MOTORU (HER 400MS)
+  // 5. KÜRESEL BULUT POLING MOTORU (HER 400MS)
   startCloudPolling(code) {
     if (this.pollInterval) clearInterval(this.pollInterval);
 
@@ -189,17 +206,17 @@ class RoomManager {
   handleCloudPayload(payload) {
     if (!payload || payload.roomCode !== this.roomCode) return;
 
-    if (payload.type === 'STATE_UPDATE' && payload.state) {
-      if (payload.state.players && payload.state.players.length >= this.roomState.players.length) {
-        this.roomState = payload.state;
-      } else {
-        const combined = [...this.roomState.players];
-        payload.state.players.forEach(p => {
-          if (!combined.some(c => c.id === p.id || c.name === p.name)) {
-            combined.push(p);
-          }
+    // A) Yeni Katılan Oyuncu Geldiğinde Listeyi Birleştir
+    if (payload.type === 'JOIN_REQUEST' && payload.player) {
+      const mergedPlayers = this.mergePlayerLists(this.roomState.players, [payload.player]);
+      this.roomState.players = mergedPlayers;
+
+      if (this.isHost) {
+        this.publishToCloud(this.roomCode, {
+          type: 'STATE_UPDATE',
+          roomCode: this.roomCode,
+          state: this.roomState
         });
-        this.roomState.players = combined;
       }
 
       this.notifyListeners({
@@ -209,6 +226,22 @@ class RoomManager {
       });
     }
 
+    // B) Güncel Oda Durumu Geldiğinde Asla Oyuncuları Ezme, Her Zaman Birleştir!
+    if (payload.type === 'STATE_UPDATE' && payload.state && Array.isArray(payload.state.players)) {
+      const mergedPlayers = this.mergePlayerLists(this.roomState.players, payload.state.players);
+      this.roomState = {
+        ...payload.state,
+        players: mergedPlayers
+      };
+
+      this.notifyListeners({
+        type: 'STATE_UPDATE',
+        roomCode: this.roomCode,
+        state: this.roomState
+      });
+    }
+
+    // C) Oyunu Başlat Bildirimi
     if (payload.type === 'GAME_START') {
       this.roomState.gameState = 'PLAYING';
       if (payload.players && payload.players.length > 0) {
@@ -222,6 +255,7 @@ class RoomManager {
       });
     }
 
+    // D) Oyun İçi Canlı Senkronizasyon
     if (payload.type === 'GAME_STATE_UPDATE' && payload.inGameState) {
       this.roomState.inGameState = payload.inGameState;
       this.notifyListeners({
