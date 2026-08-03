@@ -1,13 +1,14 @@
-// %100 GERÇEK ZAMANLI KÜRESEL MULTIPLAYER ODA MOTORU (MYPLAYER PROTECTED & ID-ONLY MERGER)
+// 🚀 GERÇEK ZAMANLI KÜRESEL MULTIPLAYER ODA MOTORU (EVENTSOURCE SSE + NON-BLOCKING HANDSHAKE)
 
 class RoomManager {
   constructor() {
     this.roomCode = null;
     this.isHost = false;
-    this.myPlayer = null; // Cihazın kendi oyuncu profil sabiti
+    this.myPlayer = null;
     this.listeners = [];
-    this.pollInterval = null;
     this.processedMsgIds = new Set();
+    this.eventSource = null;
+    this.reconnectTimer = null;
 
     this.roomState = {
       code: null,
@@ -17,8 +18,62 @@ class RoomManager {
     };
   }
 
-  // 1. ODA OLUŞTUR (Host)
-  async createRoom(hostPlayerConfig) {
+  // SSE (Server-Sent Events) Kalıcı Bağlantı Motoru (0ms Gecikme, 0 HTTP Kısıtlaması)
+  connectSSE(code) {
+    if (this.eventSource) {
+      try {
+        this.eventSource.close();
+      } catch (e) {}
+      this.eventSource = null;
+    }
+
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    const sseUrl = `https://ntfy.sh/defuse_bomb_room_${code}/sse?since=15m`;
+
+    try {
+      this.eventSource = new EventSource(sseUrl);
+
+      this.eventSource.onmessage = (event) => {
+        if (!event || !event.data) return;
+        try {
+          const rawObj = JSON.parse(event.data);
+          if (rawObj && rawObj.event === 'message' && rawObj.message) {
+            const payload = JSON.parse(rawObj.message);
+            const msgId = rawObj.id || Math.random().toString();
+
+            if (!this.processedMsgIds.has(msgId)) {
+              this.processedMsgIds.add(msgId);
+              this.handleCloudPayload(payload);
+            }
+          }
+        } catch (err) {
+          console.error("SSE parse error:", err);
+        }
+      };
+
+      this.eventSource.onerror = () => {
+        if (this.eventSource) {
+          try { this.eventSource.close(); } catch (e) {}
+          this.eventSource = null;
+        }
+        // 2 saniye sonra otomatik yeniden bağlan
+        this.reconnectTimer = setTimeout(() => {
+          if (this.roomCode === code) {
+            this.connectSSE(code);
+          }
+        }, 2000);
+      };
+    } catch (e) {
+      console.error("Failed to establish SSE connection:", e);
+    }
+  }
+
+  // 1. ODA OLUŞTUR (Host - Anında 0ms Tepki)
+  createRoom(hostPlayerConfig) {
     const code = Math.random().toString(36).substring(2, 7).toUpperCase();
     this.roomCode = code;
     this.isHost = true;
@@ -28,7 +83,6 @@ class RoomManager {
       id: hostPlayerConfig.id || Date.now(),
       isHost: true
     };
-
     this.myPlayer = hostObj;
 
     this.roomState = {
@@ -39,11 +93,11 @@ class RoomManager {
       inGameState: null
     };
 
-    // Bulut polling başlat
-    this.startCloudPolling(code);
+    // SSE Dinleyicisini Başlat
+    this.connectSSE(code);
 
-    // Odanın kurulduğunu yayınla
-    await this.publishToCloud(code, {
+    // Buluta odayı arka planda yayınla (UI'ı asla kitlemez)
+    this.publishToCloud(code, {
       type: 'STATE_UPDATE',
       roomCode: code,
       state: this.roomState
@@ -58,8 +112,8 @@ class RoomManager {
     return code;
   }
 
-  // 2. ODAYA KATIL (Joiner)
-  async joinRoom(code, playerConfig) {
+  // 2. ODAYA KATIL (Joiner - Anında 0ms Tepki)
+  joinRoom(code, playerConfig) {
     const cleanCode = code.trim().toUpperCase();
     this.roomCode = cleanCode;
     this.isHost = false;
@@ -69,73 +123,64 @@ class RoomManager {
       id: playerConfig.id || Date.now(),
       isHost: false
     };
-
     this.myPlayer = joinerObj;
-
-    // Bulut polling başlat
-    this.startCloudPolling(cleanCode);
-
-    // Bulut geçmişini tara
-    const historyMessages = await this.fetchCloudHistory(cleanCode);
-    let allFoundPlayers = [joinerObj];
-
-    if (historyMessages && historyMessages.length > 0) {
-      historyMessages.forEach(msg => {
-        if (msg && msg.state && Array.isArray(msg.state.players)) {
-          allFoundPlayers = this.mergePlayerLists(allFoundPlayers, msg.state.players);
-        }
-        if (msg && msg.player) {
-          allFoundPlayers = this.mergePlayerLists(allFoundPlayers, [msg.player]);
-        }
-      });
-    }
 
     this.roomState = {
       code: cleanCode,
-      players: allFoundPlayers,
+      players: [joinerObj],
       gameState: 'LOBBY',
       inGameState: null
     };
 
-    const updatePayload = {
+    // SSE Dinleyicisini Başlat
+    this.connectSSE(cleanCode);
+
+    // Arka Planda Katılım El Sıkışması (Handshake)
+    const sendHandshake = () => {
+      this.publishToCloud(cleanCode, {
+        type: 'JOIN_REQUEST',
+        roomCode: cleanCode,
+        player: joinerObj
+      });
+
+      this.publishToCloud(cleanCode, {
+        type: 'REQUEST_STATE',
+        roomCode: cleanCode
+      });
+    };
+
+    sendHandshake();
+    setTimeout(sendHandshake, 400);
+    setTimeout(sendHandshake, 1200);
+
+    this.notifyListeners({
       type: 'STATE_UPDATE',
       roomCode: cleanCode,
       state: this.roomState
-    };
+    });
 
-    const joinPayload = {
-      type: 'JOIN_REQUEST',
-      roomCode: cleanCode,
-      player: joinerObj,
-      state: this.roomState
-    };
-
-    // Katılım el sıkışma tekrarları (Handshake Retries)
-    await this.publishToCloud(cleanCode, joinPayload);
-    await this.publishToCloud(cleanCode, updatePayload);
-
-    setTimeout(() => this.publishToCloud(cleanCode, updatePayload), 500);
-    setTimeout(() => this.publishToCloud(cleanCode, updatePayload), 1500);
-
-    this.notifyListeners(updatePayload);
     return this.roomState;
   }
 
   // Sadece Benzersiz ID İle Oyuncu Birleştirme + Kendi Oyuncunu Daima Koru (myPlayer)
   mergePlayerLists(listA = [], listB = []) {
-    const merged = [...listA];
+    const merged = [];
 
-    listB.forEach(item => {
+    const addPlayer = (item) => {
       if (!item || !item.id) return;
-      // SADECE BENZERSİZ ID İLE EŞLEŞTİRME (İsim çakışması engellendi)
-      const exists = merged.some(p => p.id === item.id);
-      if (!exists) {
-        merged.push(item);
+      const idx = merged.findIndex(p => String(p.id) === String(item.id));
+      if (idx === -1) {
+        merged.push({ ...item });
+      } else {
+        merged[idx] = { ...merged[idx], ...item };
       }
-    });
+    };
+
+    listA.forEach(addPlayer);
+    listB.forEach(addPlayer);
 
     // Kendi Oyuncunu Daima Koru (this.myPlayer)
-    if (this.myPlayer && !merged.some(p => p.id === this.myPlayer.id)) {
+    if (this.myPlayer && !merged.some(p => String(p.id) === String(this.myPlayer.id))) {
       merged.push(this.myPlayer);
     }
 
@@ -145,7 +190,7 @@ class RoomManager {
   }
 
   // 3. OYUNU BAŞLAT (Host)
-  async startGameBroadcast(players, initialInGameState = null) {
+  startGameBroadcast(players, initialInGameState = null) {
     if (!this.roomCode) return;
 
     this.roomState.gameState = 'PLAYING';
@@ -161,12 +206,12 @@ class RoomManager {
       inGameState: initialInGameState
     };
 
-    await this.publishToCloud(this.roomCode, payload);
+    this.publishToCloud(this.roomCode, payload);
     this.notifyListeners(payload);
   }
 
   // 4. OYUN İÇİ CANLI YAYIN
-  async broadcastInGameState(inGameStatePayload) {
+  broadcastInGameState(inGameStatePayload) {
     if (!this.roomCode) return;
 
     this.roomState.inGameState = inGameStatePayload;
@@ -177,61 +222,20 @@ class RoomManager {
       inGameState: inGameStatePayload
     };
 
-    await this.publishToCloud(this.roomCode, payload);
+    this.publishToCloud(this.roomCode, payload);
     this.notifyListeners(payload);
-  }
-
-  // 5. KÜRESEL BULUT POLING MOTORU (HER 400MS)
-  startCloudPolling(code) {
-    if (this.pollInterval) clearInterval(this.pollInterval);
-
-    const pollCloud = async () => {
-      if (!this.roomCode) return;
-      const messages = await this.fetchCloudHistory(code);
-
-      messages.forEach(msg => {
-        if (msg && msg.msgId && !this.processedMsgIds.has(msg.msgId)) {
-          this.processedMsgIds.add(msg.msgId);
-          this.handleCloudPayload(msg);
-        }
-      });
-    };
-
-    pollCloud();
-    this.pollInterval = setInterval(pollCloud, 400);
-  }
-
-  async fetchCloudHistory(code) {
-    const list = [];
-    try {
-      const res = await fetch(`https://ntfy.sh/defuse_bomb_room_${code}/json?poll=1&since=15m`);
-      if (!res.ok) return list;
-
-      const text = await res.text();
-      const lines = text.trim().split('\n');
-
-      lines.forEach(line => {
-        if (!line) return;
-        try {
-          const rawObj = JSON.parse(line);
-          if (rawObj && rawObj.message) {
-            const payload = JSON.parse(rawObj.message);
-            payload.msgId = rawObj.id;
-            list.push(payload);
-          }
-        } catch (e) {}
-      });
-    } catch (e) {}
-    return list;
   }
 
   handleCloudPayload(payload) {
     if (!payload || payload.roomCode !== this.roomCode) return;
 
-    // A) Katılım Talebi Geldiğinde
+    // A) Yeni Katılan Oyuncu Geldiğinde Listeyi Birleştir
     if (payload.type === 'JOIN_REQUEST' && payload.player) {
-      const mergedPlayers = this.mergePlayerLists(this.roomState.players, [payload.player]);
-      this.roomState.players = mergedPlayers;
+      let merged = this.mergePlayerLists(this.roomState.players, [payload.player]);
+      if (this.myPlayer) {
+        merged = this.mergePlayerLists(merged, [this.myPlayer]);
+      }
+      this.roomState.players = merged;
 
       if (this.isHost) {
         this.publishToCloud(this.roomCode, {
@@ -248,9 +252,21 @@ class RoomManager {
       });
     }
 
-    // B) Güncel Oda Durumu Geldiğinde (myPlayer Korunarak Birleştirilir)
+    // B) Durum Talebi Geldiğinde (Host Yanıt Verir)
+    if (payload.type === 'REQUEST_STATE' && this.isHost) {
+      this.publishToCloud(this.roomCode, {
+        type: 'STATE_UPDATE',
+        roomCode: this.roomCode,
+        state: this.roomState
+      });
+    }
+
+    // C) Güncel Oda Durumu Geldiğinde Oyuncuları Birleştir
     if (payload.type === 'STATE_UPDATE' && payload.state && Array.isArray(payload.state.players)) {
-      const mergedPlayers = this.mergePlayerLists(this.roomState.players, payload.state.players);
+      let mergedPlayers = this.mergePlayerLists(this.roomState.players, payload.state.players);
+      if (this.myPlayer) {
+        mergedPlayers = this.mergePlayerLists(mergedPlayers, [this.myPlayer]);
+      }
       this.roomState = {
         ...payload.state,
         players: mergedPlayers
@@ -263,7 +279,7 @@ class RoomManager {
       });
     }
 
-    // C) Oyunu Başlat Bildirimi
+    // D) Oyunu Başlat Bildirimi
     if (payload.type === 'GAME_START') {
       this.roomState.gameState = 'PLAYING';
       if (payload.players && payload.players.length > 0) {
@@ -277,7 +293,7 @@ class RoomManager {
       });
     }
 
-    // D) Oyun İçi Canlı Senkronizasyon
+    // E) Oyun İçi Canlı Senkronizasyon
     if (payload.type === 'GAME_STATE_UPDATE' && payload.inGameState) {
       this.roomState.inGameState = payload.inGameState;
       this.notifyListeners({
@@ -288,25 +304,40 @@ class RoomManager {
     }
   }
 
-  async publishToCloud(code, payload) {
+  // Buluta Yangın Yap (Arka Planda / Non-blocking)
+  publishToCloud(code, payload) {
+    if (!code) return;
     try {
-      await fetch(`https://ntfy.sh/defuse_bomb_room_${code}`, {
+      fetch(`https://ntfy.sh/defuse_bomb_room_${code}`, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify(payload)
-      });
-    } catch (e) {}
+      }).catch(e => console.warn("Cloud publish silent warning:", e));
+    } catch (e) {
+      console.warn("Cloud publish catch:", e);
+    }
   }
 
-  subscribe(callback) {
-    this.listeners.push(callback);
+  subscribe(roomCodeOrCb, callback) {
+    const cb = typeof roomCodeOrCb === 'function' ? roomCodeOrCb : callback;
+    if (typeof cb !== 'function') return () => {};
+
+    this.listeners.push(cb);
     return () => {
-      this.listeners = this.listeners.filter(l => l !== callback);
+      this.listeners = this.listeners.filter(l => l !== cb);
     };
   }
 
   notifyListeners(data) {
-    this.listeners.forEach(cb => cb(data));
+    this.listeners.forEach(cb => {
+      if (typeof cb === 'function') {
+        try {
+          cb(data);
+        } catch (e) {
+          console.error("Error in room listener callback:", e);
+        }
+      }
+    });
   }
 }
 

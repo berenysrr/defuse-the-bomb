@@ -5,7 +5,7 @@ import { Bomb, Users, Play, HelpCircle, Copy, Check, Globe, Loader } from 'lucid
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Lobby() {
-  const { startGame, setMyPlayerId } = useGame();
+  const { startGame } = useGame();
   
   const [mode, setMode] = useState('LOCAL'); 
   const [playerCount, setPlayerCount] = useState(4);
@@ -18,7 +18,6 @@ export default function Lobby() {
   const [inputCode, setInputCode] = useState('');
   const [joinedPlayers, setJoinedPlayers] = useState([]);
   const [isHost, setIsHost] = useState(false);
-  const [isJoining, setIsJoining] = useState(false);
   
   // Oyuncu Profil Bilgileri
   const [myName, setMyName] = useState('');
@@ -35,7 +34,14 @@ export default function Lobby() {
   // URL'de oda kodu var mı kontrol et (?room=XXXX)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const roomParam = params.get('room');
+    let roomParam = params.get('room');
+
+    // GitHub Pages SPA 404 query fallback check (?/room=XXXX)
+    if (!roomParam && window.location.search.includes('room=')) {
+      const match = window.location.search.match(/room=([A-Z0-9]+)/i);
+      if (match) roomParam = match[1];
+    }
+
     if (roomParam) {
       setMode('JOIN');
       setInputCode(roomParam.trim().toUpperCase());
@@ -48,9 +54,9 @@ export default function Lobby() {
       if (!payload) return;
 
       // 1. Oda durumu güncellendiğinde oyuncu listesini yenile
-      if (payload.type === 'STATE_UPDATE') {
-        if (roomManager.roomState && Array.isArray(roomManager.roomState.players)) {
-          setJoinedPlayers([...roomManager.roomState.players]);
+      if (payload.type === 'STATE_UPDATE' && payload.state) {
+        if (payload.state.players && payload.state.players.length > 0) {
+          setJoinedPlayers([...payload.state.players]);
         }
       }
 
@@ -75,49 +81,49 @@ export default function Lobby() {
     setLocalConfigs(updated);
   };
 
-  // ODA OLUŞTUR (Host)
-  const handleCreateRoom = async (e) => {
+  // ODA OLUŞTUR (Host - 0ms ANINDA EKRAN GEÇİŞİ)
+  const handleCreateRoom = (e) => {
     if (e) e.preventDefault();
-    setIsJoining(true);
+
     const hostPlayer = {
       id: Date.now(),
       name: myName.trim() !== '' ? myName.trim() : 'Oda Kurucu',
       avatar: myAvatar,
       isHost: true
     };
-    setMyPlayerId(hostPlayer.id);
-    const code = await roomManager.createRoom(hostPlayer);
+
+    // 1. ANINDA 0ms EKRAN GEÇİŞİ (Kilitlenme/Yüklenme Bekleme Yok!)
+    const code = Math.random().toString(36).substring(2, 7).toUpperCase();
     setRoomCode(code);
     setIsHost(true);
     setJoinedPlayers([hostPlayer]);
-    setIsJoining(false);
     setMode('ROOM_WAIT');
+
+    // 2. Arka planda bulut odasını başlat
+    roomManager.createRoom(hostPlayer);
   };
 
-  // ODAYA KATIL (Joiner)
-  const handleJoinRoom = async (e) => {
+  // ODAYA KATIL (Joiner - 0ms ANINDA EKRAN GEÇİŞİ)
+  const handleJoinRoom = (e) => {
     if (e) e.preventDefault();
     const cleanCode = inputCode.trim().toUpperCase();
     if (!cleanCode) return;
 
-    setIsJoining(true);
     const joinerPlayer = {
       id: Date.now(),
       name: myName.trim() !== '' ? myName.trim() : `Misafir Oyuncu`,
       avatar: myAvatar,
       isHost: false
     };
-    setMyPlayerId(joinerPlayer.id);
+
+    // 1. ANINDA 0ms EKRAN GEÇİŞİ
     setIsHost(false);
-    const roomState = await roomManager.joinRoom(cleanCode, joinerPlayer);
     setRoomCode(cleanCode);
-    if (roomState && roomState.players && roomState.players.length > 0) {
-      setJoinedPlayers([...roomState.players]);
-    } else {
-      setJoinedPlayers([joinerPlayer]);
-    }
-    setIsJoining(false);
+    setJoinedPlayers([joinerPlayer]);
     setMode('ROOM_WAIT');
+
+    // 2. Arka planda buluta katıl
+    roomManager.joinRoom(cleanCode, joinerPlayer);
   };
 
   // 1. Sadece Oda Kodunu Kopyala (ör: BOMB1)
@@ -127,9 +133,10 @@ export default function Lobby() {
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
-  // 2. Tam Davet Linkini Kopyala (ör: http://...?room=BOMB1)
+  // 2. Tam Davet Linkini Kopyala (Düzeltildi: Tam Repo Yolu eklendi /defuse-the-bomb/?room=XXXX)
   const copyFullLink = () => {
-    const link = `${window.location.origin}/?room=${roomCode}`;
+    const basePath = window.location.pathname.replace(/\/$/, '');
+    const link = `${window.location.origin}${basePath}/?room=${roomCode}`;
     navigator.clipboard.writeText(link);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
@@ -287,8 +294,7 @@ export default function Lobby() {
             ))}
           </div>
 
-          <button type="submit" disabled={isJoining} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #f59e0b, #b45309)', color: '#fff', fontWeight: 'bold', fontSize: '16px', border: 'none', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-            {isJoining ? <Loader size={18} className="spin" /> : null}
+          <button type="submit" style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #f59e0b, #b45309)', color: '#fff', fontWeight: 'bold', fontSize: '16px', border: 'none', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
             <span>ODA KODU AL VE BAŞLAT ➔</span>
           </button>
         </form>
@@ -339,8 +345,7 @@ export default function Lobby() {
             ))}
           </div>
 
-          <button type="submit" disabled={isJoining} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #06b6d4, #0891b2)', color: '#fff', fontWeight: 'bold', fontSize: '16px', border: 'none', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-            {isJoining ? <Loader size={18} className="spin" /> : null}
+          <button type="submit" style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #06b6d4, #0891b2)', color: '#fff', fontWeight: 'bold', fontSize: '16px', border: 'none', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
             <span>ODAYA KATIL ➔</span>
           </button>
         </form>
