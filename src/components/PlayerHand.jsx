@@ -15,12 +15,13 @@ const CARD_ICONS = {
 };
 
 export default function PlayerHand() {
-  const { players, turnIndex, playCard, gameState, isMyTurn } = useGame();
+  const { players, turnIndex, playCard, gameState, isMyTurn, myPlayerId } = useGame();
 
   if (gameState !== 'PLAYING' || !Array.isArray(players) || players.length === 0) return null;
 
   const safeTurnIndex = turnIndex >= 0 && turnIndex < players.length ? turnIndex : 0;
-  const currentPlayer = players[safeTurnIndex];
+  const myPlayer = players.find(p => String(p.id) === String(myPlayerId));
+  const currentPlayer = myPlayer || players[safeTurnIndex];
 
   if (!currentPlayer) return null;
 

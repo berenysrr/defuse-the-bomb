@@ -104,15 +104,16 @@ export function GameProvider({ children }) {
     setLastPlayedCard(null);
     setWireEffect(null);
 
-    const initialExplodeId = Math.floor(Math.random() * 5) + 1;
-    setExplodingWireId(initialExplodeId);
-    setWires([
+    const defaultWires = [
       { id: 1, color: '#ef4444', isCut: false },
       { id: 2, color: '#3b82f6', isCut: false },
       { id: 3, color: '#eab308', isCut: false },
       { id: 4, color: '#22c55e', isCut: false },
       { id: 5, color: '#a855f7', isCut: false }
-    ]);
+    ];
+    const initialExplodeId = Math.floor(Math.random() * 5) + 1;
+    setExplodingWireId(initialExplodeId);
+    setWires(defaultWires);
 
     const defaultNames = ['Çılgın Maymun', 'Cyber Robot', 'Ninja Kedi', 'Hacker Tilki', 'Uzaylı Alien', 'Gamer Ayı'];
 
@@ -142,7 +143,7 @@ export function GameProvider({ children }) {
       turnDirection: 1,
       timeLeft: 60,
       players: newPlayers,
-      wires: initialWires,
+      wires: defaultWires,
       currentQuestion: firstQ,
       explodingWireId: initialExplodeId,
       gameState: 'PLAYING'
@@ -173,7 +174,7 @@ export function GameProvider({ children }) {
   useEffect(() => {
     if (!activeRoomCode) return;
 
-    const unsubscribe = roomManager.subscribe(activeRoomCode, (payload) => {
+    const unsubscribe = roomManager.subscribe((payload) => {
       if (!payload) return;
 
       if (payload.type === 'GAME_STATE_UPDATE' && payload.inGameState) {
