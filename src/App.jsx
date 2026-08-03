@@ -191,7 +191,7 @@ function GameBoard() {
                 gap: '10px'
               }}
             >
-              <span>🃏 {lastPlayedCard.player?.toUpperCase()}: {lastPlayedCard.name} KARTINI OYNADI!</span>
+              <span>🃏 {(lastPlayedCard?.player || 'OYUNCU').toUpperCase()}: {lastPlayedCard?.name} KARTINI OYNADI!</span>
             </motion.div>
           )}
           {wireEffect && (
@@ -246,8 +246,9 @@ function GameBoard() {
           }}
         >
           <img
-            src="/bomb.jpg"
+            src="./bomb.jpg"
             alt="3D Bomb"
+            onError={(e) => { e.target.style.display = 'none'; }}
             style={{ width: '95px', height: '95px', objectFit: 'cover', borderRadius: '50%' }}
           />
           <div className="font-mono-tech glow-red" style={{ position: 'absolute', bottom: '-16px', background: '#020617', padding: '3px 16px', borderRadius: '12px', fontSize: '22px', fontWeight: 'bold', color: '#ef4444', border: '1.5px solid #ef4444' }}>
