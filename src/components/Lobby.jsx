@@ -31,20 +31,15 @@ export default function Lobby() {
     { id: 3, name: 'Hacker Tilki', avatar: AVATARS[3] }
   ]);
 
-  // URL'de oda kodu var mı kontrol et (?room=XXXX)
+  // Hash veya Query'de oda kodu var mı kontrol et (#room=XXXX veya ?room=XXXX)
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    let roomParam = params.get('room');
-
-    // GitHub Pages SPA 404 query fallback check (?/room=XXXX)
-    if (!roomParam && window.location.search.includes('room=')) {
-      const match = window.location.search.match(/room=([A-Z0-9]+)/i);
-      if (match) roomParam = match[1];
-    }
-
-    if (roomParam) {
-      setMode('JOIN');
-      setInputCode(roomParam.trim().toUpperCase());
+    const fullUrl = window.location.href;
+    if (fullUrl.includes('room=')) {
+      const match = fullUrl.match(/room=([A-Z0-9]+)/i);
+      if (match && match[1]) {
+        setMode('JOIN');
+        setInputCode(match[1].trim().toUpperCase());
+      }
     }
   }, []);
 
@@ -92,14 +87,12 @@ export default function Lobby() {
       isHost: true
     };
 
-    // 1. ANINDA 0ms EKRAN GEÇİŞİ (Kilitlenme/Yüklenme Bekleme Yok!)
     const code = Math.random().toString(36).substring(2, 7).toUpperCase();
     setRoomCode(code);
     setIsHost(true);
     setJoinedPlayers([hostPlayer]);
     setMode('ROOM_WAIT');
 
-    // 2. Arka planda bulut odasını başlat
     roomManager.createRoom(hostPlayer);
   };
 
@@ -116,13 +109,11 @@ export default function Lobby() {
       isHost: false
     };
 
-    // 1. ANINDA 0ms EKRAN GEÇİŞİ
     setIsHost(false);
     setRoomCode(cleanCode);
     setJoinedPlayers([joinerPlayer]);
     setMode('ROOM_WAIT');
 
-    // 2. Arka planda buluta katıl
     roomManager.joinRoom(cleanCode, joinerPlayer);
   };
 
@@ -133,10 +124,11 @@ export default function Lobby() {
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
-  // 2. Tam Davet Linkini Kopyala (Düzeltildi: Tam Repo Yolu eklendi /defuse-the-bomb/?room=XXXX)
+  // 2. Tam Davet Linkini Kopyala (HASH ROUTING: GitHub Pages 404 Engellendi #room=XXXX)
   const copyFullLink = () => {
-    const basePath = window.location.pathname.replace(/\/$/, '');
-    const link = `${window.location.origin}${basePath}/?room=${roomCode}`;
+    const baseUrl = window.location.href.split('#')[0].split('?')[0];
+    const cleanBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+    const link = `${cleanBase}#room=${roomCode}`;
     navigator.clipboard.writeText(link);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
