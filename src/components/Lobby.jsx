@@ -109,7 +109,7 @@ export default function Lobby() {
     setIsHost(false);
     const roomState = await roomManager.joinRoom(cleanCode, joinerPlayer);
     setRoomCode(cleanCode);
-    if (roomState && roomState.players) {
+    if (roomState && roomState.players && roomState.players.length > 0) {
       setJoinedPlayers([...roomState.players]);
     } else {
       setJoinedPlayers([joinerPlayer]);
@@ -403,7 +403,7 @@ export default function Lobby() {
               <div key={p.id || idx} style={{ background: '#1e293b', padding: '10px 20px', borderRadius: '14px', border: '1.5px solid #334155', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
                 <span style={{ fontSize: '26px' }}>{p.avatar?.icon}</span>
                 <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#fff' }}>{p.name}</span>
-                {idx === 0 ? (
+                {p.isHost ? (
                   <span style={{ fontSize: '10px', background: '#f59e0b', color: '#000', padding: '2px 6px', borderRadius: '6px', fontWeight: 'bold' }}>👑 HOST</span>
                 ) : (
                   <span style={{ fontSize: '10px', background: '#06b6d4', color: '#000', padding: '2px 6px', borderRadius: '6px', fontWeight: 'bold' }}>📲 KATILAN</span>
@@ -455,7 +455,7 @@ export default function Lobby() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '24px' }}>
             {localConfigs.map((config, idx) => (
-              <div key={config.id} className="glass-panel" style={{ padding: '14px', background: '#0f172a', border: '1px solid #334155' }}>
+              <div key={config.id} className="glass-panel" style={{ padding: '14px', background: '#0f172a', border: '1.5px solid #334155' }}>
                 <div style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 'bold', marginBottom: '6px' }}>{idx + 1}. OYUNCU</div>
                 <input
                   type="text"
@@ -491,7 +491,7 @@ export default function Lobby() {
             ))}
           </div>
 
-          <button onClick={handleStartGame} style={{ width: '100%', padding: '16px', background: 'linear-gradient(135deg, #ef4444, #b91c1c)', color: '#fff', fontWeight: 'bold', fontSize: '18px', border: 'none', borderRadius: '14px', cursor: 'pointer', boxShadow: '0 10px 25px rgba(239, 68, 68, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+          <button onClick={handleStartGame} style={{ width: '100%', padding: '16px', background: 'linear-gradient(135deg, #ef4444, #b91c1c)', color: '#fff', fontWeight: 'bold', fontSize: '18px', border: 'none', borderRadius: '14px', cursor: 'pointer', boxShadow: '0 10px 25px rgba(239, 68, 68, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
             <Play size={20} /> 1 CİHAZDA OYUNU BAŞLAT!
           </button>
         </>
