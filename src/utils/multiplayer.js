@@ -1,13 +1,19 @@
-// %100 ANLIK VE KESİNTİSİZ KÜRESEL BULUT VERİTABANI MOTORU (DIRECT CLOUD OBJECT SYNC)
+// %100 GERÇEK ZAMANLI LÜKS MQTT WEBSOCKET RETAIN ODA VE OYUN MOTORU (50MS INSTANT SYNC)
+
+import mqtt from 'mqtt';
+
+const MQTT_BROKERS = [
+  'wss://broker.emqx.io:8084/mqtt',
+  'wss://test.mosquitto.org:8081/mqtt'
+];
 
 class RoomManager {
   constructor() {
     this.roomCode = null;
     this.isHost = false;
     this.myPlayer = null;
-    this.objectId = null;
     this.listeners = [];
-    this.pollInterval = null;
+    this.client = null;
 
     this.roomState = {
       code: null,
@@ -17,7 +23,49 @@ class RoomManager {
     };
   }
 
-  // 1. ODA OLUŞTUR (Host - Anında Bulut Nesnesi Üretir)
+  // MQTT WebSocket Bağlantısı Kur (Retain Destekli)
+  initMQTT(code, onConnected = null) {
+    if (this.client) {
+      try { this.client.end(); } catch (e) {}
+    }
+
+    const topic = `defuse_bomb_v2/room/${code}`;
+    let brokerIdx = 0;
+
+    const connectToBroker = (url) => {
+      try {
+        this.client = mqtt.connect(url, {
+          clientId: `defuse_p_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          keepalive: 30,
+          reconnectPeriod: 2000,
+          connectTimeout: 5000
+        });
+
+        this.client.on('connect', () => {
+          console.log("MQTT WebSocket Bağlantısı Kuruldu:", url);
+          this.client.subscribe(topic, { qos: 1 }, () => {
+            if (onConnected) onConnected();
+          });
+        });
+
+        this.client.on('message', (t, messageBuffer) => {
+          try {
+            const payload = JSON.parse(messageBuffer.toString());
+            this.handlePayload(payload);
+          } catch (e) {}
+        });
+
+        this.client.on('error', () => {
+          brokerIdx = (brokerIdx + 1) % MQTT_BROKERS.length;
+          connectToBroker(MQTT_BROKERS[brokerIdx]);
+        });
+      } catch (e) {}
+    };
+
+    connectToBroker(MQTT_BROKERS[0]);
+  }
+
+  // 1. ODA OLUŞTUR (Host)
   async createRoom(hostPlayerConfig) {
     const code = Math.random().toString(36).substring(2, 7).toUpperCase();
     this.roomCode = code;
@@ -38,29 +86,10 @@ class RoomManager {
       inGameState: null
     };
 
-    // Bulutta hızlı nesne üret
-    try {
-      const res = await fetch("https://api.restful-api.dev/objects", {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: `defuse_room_${code}`,
-          data: this.roomState
-        })
-      });
-      if (res.ok) {
-        const obj = await res.json();
-        this.objectId = obj.id;
-        try { 
-          localStorage.setItem(`defuse_obj_${code}`, obj.id);
-          localStorage.setItem(`defuse_last_obj`, obj.id);
-          localStorage.setItem(`defuse_last_code`, code);
-        } catch (e) {}
-      }
-    } catch (e) {}
-
-    // Polling başlat (Her 300ms'de bir buluttan güncel oku)
-    this.startCloudPolling(code);
+    // MQTT WebSocket başlat ve odayı kalıcı duyur (retain: true)
+    this.initMQTT(code, () => {
+      this.publishStateUpdate();
+    });
 
     this.notifyListeners({
       type: 'STATE_UPDATE',
@@ -68,11 +97,11 @@ class RoomManager {
       state: this.roomState
     });
 
-    return { code, objectId: this.objectId };
+    return code;
   }
 
-  // 2. ODAYA KATIL (Joiner - Anında Buluttaki Odaya Katılır)
-  async joinRoom(code, playerConfig, targetObjectId = null) {
+  // 2. ODAYA KATIL (Joiner)
+  async joinRoom(code, playerConfig) {
     const cleanCode = code.trim().toUpperCase();
     this.roomCode = cleanCode;
     this.isHost = false;
@@ -91,15 +120,15 @@ class RoomManager {
       inGameState: null
     };
 
-    if (targetObjectId) {
-      this.objectId = targetObjectId;
-    }
-
-    // Bulut odasını çek ve oyuncuyu kaydet
-    await this.fetchAndJoinCloudRoom(cleanCode, joinerObj);
-
-    // Polling başlat (Her 300ms)
-    this.startCloudPolling(cleanCode);
+    // MQTT WebSocket başlat
+    this.initMQTT(cleanCode, () => {
+      // Katıldığını bildir
+      this.publishPayload({
+        type: 'JOIN_REQUEST',
+        roomCode: cleanCode,
+        player: joinerObj
+      });
+    });
 
     this.notifyListeners({
       type: 'STATE_UPDATE',
@@ -110,67 +139,7 @@ class RoomManager {
     return this.roomState;
   }
 
-  // Bulut Nesnesini Çekip Oyuncu Listesine Ekleme
-  async fetchAndJoinCloudRoom(code, joinerObj) {
-    try {
-      if (!this.objectId) {
-        let savedId = localStorage.getItem(`defuse_obj_${code}`);
-        if (!savedId && localStorage.getItem('defuse_last_code') === code) {
-          savedId = localStorage.getItem('defuse_last_obj');
-        }
-        if (savedId) this.objectId = savedId;
-      }
-
-      // Eğer id hala bulunamadıysa bulut listesinden son odayı çek
-      if (!this.objectId) {
-        const res = await fetch("https://api.restful-api.dev/objects");
-        if (res.ok) {
-          const list = await res.json();
-          if (Array.isArray(list)) {
-            const matches = list.filter(o => o.name === `defuse_room_${code}`);
-            if (matches.length > 0) {
-              // En son oluşturulan odayı al
-              const latest = matches[matches.length - 1];
-              this.objectId = latest.id;
-            }
-          }
-        }
-      }
-
-      if (this.objectId) {
-        const getRes = await fetch(`https://api.restful-api.dev/objects/${this.objectId}`);
-        if (getRes.ok) {
-          const obj = await getRes.json();
-          if (obj && obj.data) {
-            const hostState = obj.data;
-            const merged = this.mergePlayerLists(hostState.players || [], [joinerObj]);
-            this.roomState = {
-              ...hostState,
-              players: merged
-            };
-
-            await this.updateCloudState();
-          }
-        }
-      } else {
-        // Sıfırdan bulut odası oluştur
-        const createRes = await fetch("https://api.restful-api.dev/objects", {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: `defuse_room_${code}`,
-            data: this.roomState
-          })
-        });
-        if (createRes.ok) {
-          const newObj = await createRes.json();
-          this.objectId = newObj.id;
-        }
-      }
-    } catch (e) {}
-  }
-
-  // Akıllı Oyuncu Birleştirme Motoru (ID Bazlı)
+  // Akıllı Oyuncu Birleştirme Motoru
   mergePlayerLists(listA = [], listB = []) {
     const merged = [...listA];
 
@@ -190,18 +159,20 @@ class RoomManager {
     return merged;
   }
 
-  // Bulut Nesnesini Güncelle (PUT)
-  async updateCloudState() {
-    if (!this.objectId || !this.roomCode) return;
+  publishStateUpdate() {
+    this.publishPayload({
+      type: 'STATE_UPDATE',
+      roomCode: this.roomCode,
+      state: this.roomState
+    });
+  }
+
+  publishPayload(payload) {
+    if (!this.client || !this.roomCode) return;
+    const topic = `defuse_bomb_v2/room/${this.roomCode}`;
     try {
-      await fetch(`https://api.restful-api.dev/objects/${this.objectId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: `defuse_room_${this.roomCode}`,
-          data: this.roomState
-        })
-      });
+      // retain: true sayesinde oda durumları bulutta saklanır ve yeni giren cihazlar anında alır!
+      this.client.publish(topic, JSON.stringify(payload), { qos: 1, retain: true });
     } catch (e) {}
   }
 
@@ -212,14 +183,15 @@ class RoomManager {
     this.roomState.gameState = 'PLAYING';
     this.roomState.players = players;
 
-    await this.updateCloudState();
-
-    this.notifyListeners({
+    const payload = {
       type: 'GAME_START',
       roomCode: this.roomCode,
       players: players,
       inGameState: initialInGameState
-    });
+    };
+
+    this.publishPayload(payload);
+    this.notifyListeners(payload);
   }
 
   // 4. OYUN İÇİ CANLI YAYIN
@@ -227,65 +199,75 @@ class RoomManager {
     if (!this.roomCode) return;
 
     this.roomState.inGameState = inGameStatePayload;
-    await this.updateCloudState();
 
-    this.notifyListeners({
+    const payload = {
       type: 'GAME_STATE_UPDATE',
       roomCode: this.roomCode,
       inGameState: inGameStatePayload
-    });
-  }
-
-  // 5. BULUT SORGULAMA MOTORU (HER 300MS)
-  startCloudPolling(code) {
-    if (this.pollInterval) clearInterval(this.pollInterval);
-
-    const poll = async () => {
-      if (!this.roomCode) return;
-
-      if (!this.objectId) {
-        let savedId = localStorage.getItem(`defuse_obj_${code}`);
-        if (savedId) this.objectId = savedId;
-      }
-
-      if (this.objectId) {
-        try {
-          const res = await fetch(`https://api.restful-api.dev/objects/${this.objectId}`);
-          if (res.ok) {
-            const obj = await res.json();
-            if (obj && obj.data) {
-              const cloudState = obj.data;
-              const merged = this.mergePlayerLists(this.roomState.players, cloudState.players || []);
-              
-              const isGameStarted = cloudState.gameState === 'PLAYING' && this.roomState.gameState !== 'PLAYING';
-              
-              this.roomState = {
-                ...cloudState,
-                players: merged
-              };
-
-              if (isGameStarted) {
-                this.notifyListeners({
-                  type: 'GAME_START',
-                  roomCode: this.roomCode,
-                  players: this.roomState.players,
-                  inGameState: cloudState.inGameState
-                });
-              } else {
-                this.notifyListeners({
-                  type: 'STATE_UPDATE',
-                  roomCode: this.roomCode,
-                  state: this.roomState
-                });
-              }
-            }
-          }
-        } catch (e) {}
-      }
     };
 
-    poll();
-    this.pollInterval = setInterval(poll, 300);
+    this.publishPayload(payload);
+    this.notifyListeners(payload);
+  }
+
+  // GELEN PAYLOAD'LARI ANINDA İŞLE
+  handlePayload(payload) {
+    if (!payload || payload.roomCode !== this.roomCode) return;
+
+    // A) Katılan Oyuncu İsteyi Geldiğinde
+    if (payload.type === 'JOIN_REQUEST' && payload.player) {
+      const merged = this.mergePlayerLists(this.roomState.players, [payload.player]);
+      this.roomState.players = merged;
+
+      if (this.isHost) {
+        this.publishStateUpdate();
+      }
+
+      this.notifyListeners({
+        type: 'STATE_UPDATE',
+        roomCode: this.roomCode,
+        state: this.roomState
+      });
+    }
+
+    // B) Güncel Oda Durumu Geldiğinde
+    if (payload.type === 'STATE_UPDATE' && payload.state && Array.isArray(payload.state.players)) {
+      const merged = this.mergePlayerLists(this.roomState.players, payload.state.players);
+      this.roomState = {
+        ...payload.state,
+        players: merged
+      };
+
+      this.notifyListeners({
+        type: 'STATE_UPDATE',
+        roomCode: this.roomCode,
+        state: this.roomState
+      });
+    }
+
+    // C) Oyunu Başlat Emri Geldiğinde
+    if (payload.type === 'GAME_START') {
+      this.roomState.gameState = 'PLAYING';
+      if (payload.players && payload.players.length > 0) {
+        this.roomState.players = payload.players;
+      }
+      this.notifyListeners({
+        type: 'GAME_START',
+        roomCode: this.roomCode,
+        players: this.roomState.players,
+        inGameState: payload.inGameState
+      });
+    }
+
+    // D) Canlı Hamle Senkronizasyonu
+    if (payload.type === 'GAME_STATE_UPDATE' && payload.inGameState) {
+      this.roomState.inGameState = payload.inGameState;
+      this.notifyListeners({
+        type: 'GAME_STATE_UPDATE',
+        roomCode: this.roomCode,
+        inGameState: payload.inGameState
+      });
+    }
   }
 
   subscribe(callback) {
