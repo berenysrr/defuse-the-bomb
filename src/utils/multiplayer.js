@@ -1,4 +1,4 @@
-// %100 GARANTİLİ GERÇEK ZAMANLI KÜRESEL BULUT VERİTABANI MOTORU (RESTFUL CLOUD SYNC)
+// %100 ANLIK VE KESİNTİSİZ KÜRESEL BULUT VERİTABANI MOTORU (DIRECT CLOUD OBJECT SYNC)
 
 class RoomManager {
   constructor() {
@@ -17,7 +17,7 @@ class RoomManager {
     };
   }
 
-  // 1. ODA OLUŞTUR (Host)
+  // 1. ODA OLUŞTUR (Host - Anında Bulut Nesnesi Üretir)
   async createRoom(hostPlayerConfig) {
     const code = Math.random().toString(36).substring(2, 7).toUpperCase();
     this.roomCode = code;
@@ -38,7 +38,7 @@ class RoomManager {
       inGameState: null
     };
 
-    // Bulut sunucusuna odayı kaydet
+    // Bulutta hızlı nesne üret
     try {
       const res = await fetch("https://api.restful-api.dev/objects", {
         method: 'POST',
@@ -51,11 +51,15 @@ class RoomManager {
       if (res.ok) {
         const obj = await res.json();
         this.objectId = obj.id;
-        try { localStorage.setItem(`defuse_obj_${code}`, obj.id); } catch (e) {}
+        try { 
+          localStorage.setItem(`defuse_obj_${code}`, obj.id);
+          localStorage.setItem(`defuse_last_obj`, obj.id);
+          localStorage.setItem(`defuse_last_code`, code);
+        } catch (e) {}
       }
     } catch (e) {}
 
-    // Polling başlat (Her 400ms)
+    // Polling başlat (Her 300ms'de bir buluttan güncel oku)
     this.startCloudPolling(code);
 
     this.notifyListeners({
@@ -64,11 +68,11 @@ class RoomManager {
       state: this.roomState
     });
 
-    return code;
+    return { code, objectId: this.objectId };
   }
 
-  // 2. ODAYA KATIL (Joiner)
-  async joinRoom(code, playerConfig) {
+  // 2. ODAYA KATIL (Joiner - Anında Buluttaki Odaya Katılır)
+  async joinRoom(code, playerConfig, targetObjectId = null) {
     const cleanCode = code.trim().toUpperCase();
     this.roomCode = cleanCode;
     this.isHost = false;
@@ -87,10 +91,14 @@ class RoomManager {
       inGameState: null
     };
 
-    // Buluttan odayı ara ve katılanı listeye ekle
+    if (targetObjectId) {
+      this.objectId = targetObjectId;
+    }
+
+    // Bulut odasını çek ve oyuncuyu kaydet
     await this.fetchAndJoinCloudRoom(cleanCode, joinerObj);
 
-    // Polling başlat (Her 400ms)
+    // Polling başlat (Her 300ms)
     this.startCloudPolling(cleanCode);
 
     this.notifyListeners({
@@ -102,25 +110,35 @@ class RoomManager {
     return this.roomState;
   }
 
-  // Buluttan Oda Nesnesini Çekip Katılan Oyuncuyu Ekleme
+  // Bulut Nesnesini Çekip Oyuncu Listesine Ekleme
   async fetchAndJoinCloudRoom(code, joinerObj) {
     try {
-      // 1. Önce yerel hafızadaki objectId'ye bak
-      let targetId = localStorage.getItem(`defuse_obj_${code}`);
+      if (!this.objectId) {
+        let savedId = localStorage.getItem(`defuse_obj_${code}`);
+        if (!savedId && localStorage.getItem('defuse_last_code') === code) {
+          savedId = localStorage.getItem('defuse_last_obj');
+        }
+        if (savedId) this.objectId = savedId;
+      }
 
-      // 2. Eğer id yoksa bulut nesnelerini tara
-      if (!targetId) {
+      // Eğer id hala bulunamadıysa bulut listesinden son odayı çek
+      if (!this.objectId) {
         const res = await fetch("https://api.restful-api.dev/objects");
         if (res.ok) {
           const list = await res.json();
-          const match = Array.isArray(list) ? list.find(o => o.name === `defuse_room_${code}`) : null;
-          if (match) targetId = match.id;
+          if (Array.isArray(list)) {
+            const matches = list.filter(o => o.name === `defuse_room_${code}`);
+            if (matches.length > 0) {
+              // En son oluşturulan odayı al
+              const latest = matches[matches.length - 1];
+              this.objectId = latest.id;
+            }
+          }
         }
       }
 
-      if (targetId) {
-        this.objectId = targetId;
-        const getRes = await fetch(`https://api.restful-api.dev/objects/${targetId}`);
+      if (this.objectId) {
+        const getRes = await fetch(`https://api.restful-api.dev/objects/${this.objectId}`);
         if (getRes.ok) {
           const obj = await getRes.json();
           if (obj && obj.data) {
@@ -131,12 +149,11 @@ class RoomManager {
               players: merged
             };
 
-            // Güncellenmiş oyuncu listesini buluta kaydet
             await this.updateCloudState();
           }
         }
       } else {
-        // Eğer oda henüz bulutta yoksa sıfırdan bulut objesi oluştur
+        // Sıfırdan bulut odası oluştur
         const createRes = await fetch("https://api.restful-api.dev/objects", {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -148,13 +165,12 @@ class RoomManager {
         if (createRes.ok) {
           const newObj = await createRes.json();
           this.objectId = newObj.id;
-          try { localStorage.setItem(`defuse_obj_${code}`, newObj.id); } catch(e){}
         }
       }
     } catch (e) {}
   }
 
-  // Akıllı Oyuncu Birleştirme Motoru
+  // Akıllı Oyuncu Birleştirme Motoru (ID Bazlı)
   mergePlayerLists(listA = [], listB = []) {
     const merged = [...listA];
 
@@ -174,7 +190,7 @@ class RoomManager {
     return merged;
   }
 
-  // Buluttaki Oda Durumunu Güncelle (PUT)
+  // Bulut Nesnesini Güncelle (PUT)
   async updateCloudState() {
     if (!this.objectId || !this.roomCode) return;
     try {
@@ -220,7 +236,7 @@ class RoomManager {
     });
   }
 
-  // 5. BULUT POLING MOTORU (HER 400MS)
+  // 5. BULUT SORGULAMA MOTORU (HER 300MS)
   startCloudPolling(code) {
     if (this.pollInterval) clearInterval(this.pollInterval);
 
@@ -228,22 +244,8 @@ class RoomManager {
       if (!this.roomCode) return;
 
       if (!this.objectId) {
-        let targetId = localStorage.getItem(`defuse_obj_${code}`);
-        if (!targetId) {
-          try {
-            const res = await fetch("https://api.restful-api.dev/objects");
-            if (res.ok) {
-              const list = await res.json();
-              const match = Array.isArray(list) ? list.find(o => o.name === `defuse_room_${code}`) : null;
-              if (match) {
-                targetId = match.id;
-                this.objectId = targetId;
-              }
-            }
-          } catch(e){}
-        } else {
-          this.objectId = targetId;
-        }
+        let savedId = localStorage.getItem(`defuse_obj_${code}`);
+        if (savedId) this.objectId = savedId;
       }
 
       if (this.objectId) {
@@ -283,7 +285,7 @@ class RoomManager {
     };
 
     poll();
-    this.pollInterval = setInterval(poll, 400);
+    this.pollInterval = setInterval(poll, 300);
   }
 
   subscribe(callback) {

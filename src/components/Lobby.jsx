@@ -16,6 +16,7 @@ export default function Lobby() {
   // Oda Durumları
   const [roomCode, setRoomCode] = useState('');
   const [inputCode, setInputCode] = useState('');
+  const [targetObjectId, setTargetObjectId] = useState(null);
   const [joinedPlayers, setJoinedPlayers] = useState([]);
   const [isHost, setIsHost] = useState(false);
   
@@ -31,19 +32,24 @@ export default function Lobby() {
     { id: 3, name: 'Hacker Tilki', avatar: AVATARS[3] }
   ]);
 
-  // Hash veya Query'de oda kodu var mı kontrol et (#room=XXXX veya ?room=XXXX)
+  // Hash veya Query'de oda kodu var mı kontrol et (#room=XXXX&id=YYYY veya ?room=XXXX)
   useEffect(() => {
     const fullUrl = window.location.href;
     if (fullUrl.includes('room=')) {
-      const match = fullUrl.match(/room=([A-Z0-9]+)/i);
-      if (match && match[1]) {
+      const roomMatch = fullUrl.match(/room=([A-Z0-9]+)/i);
+      const idMatch = fullUrl.match(/id=([a-z0-9]+)/i);
+
+      if (roomMatch && roomMatch[1]) {
         setMode('JOIN');
-        setInputCode(match[1].trim().toUpperCase());
+        setInputCode(roomMatch[1].trim().toUpperCase());
+      }
+      if (idMatch && idMatch[1]) {
+        setTargetObjectId(idMatch[1]);
       }
     }
   }, []);
 
-  // KÜRESEL CANLI ODA DİNLEYİCİSİ (WEBRTC REALTIME SYNC)
+  // KÜRESEL CANLI ODA DİNLEYİCİSİ (REALTIME CLOUD SYNC)
   useEffect(() => {
     const unsubscribe = roomManager.subscribe((payload) => {
       if (!payload) return;
@@ -77,7 +83,7 @@ export default function Lobby() {
   };
 
   // ODA OLUŞTUR (Host - 0ms ANINDA EKRAN GEÇİŞİ)
-  const handleCreateRoom = (e) => {
+  const handleCreateRoom = async (e) => {
     if (e) e.preventDefault();
 
     const hostPlayer = {
@@ -87,17 +93,22 @@ export default function Lobby() {
       isHost: true
     };
 
-    const code = Math.random().toString(36).substring(2, 7).toUpperCase();
-    setRoomCode(code);
+    // 1. ANINDA 0ms EKRAN GEÇİŞİ
+    const tempCode = Math.random().toString(36).substring(2, 7).toUpperCase();
+    setRoomCode(tempCode);
     setIsHost(true);
     setJoinedPlayers([hostPlayer]);
     setMode('ROOM_WAIT');
 
-    roomManager.createRoom(hostPlayer);
+    // 2. Bulutta odayı oluştur
+    const res = await roomManager.createRoom(hostPlayer);
+    if (res && res.code) {
+      setRoomCode(res.code);
+    }
   };
 
   // ODAYA KATIL (Joiner - 0ms ANINDA EKRAN GEÇİŞİ)
-  const handleJoinRoom = (e) => {
+  const handleJoinRoom = async (e) => {
     if (e) e.preventDefault();
     const cleanCode = inputCode.trim().toUpperCase();
     if (!cleanCode) return;
@@ -114,7 +125,8 @@ export default function Lobby() {
     setJoinedPlayers([joinerPlayer]);
     setMode('ROOM_WAIT');
 
-    roomManager.joinRoom(cleanCode, joinerPlayer);
+    // Buluttaki odaya anında katıl
+    await roomManager.joinRoom(cleanCode, joinerPlayer, targetObjectId);
   };
 
   // 1. Sadece Oda Kodunu Kopyala (ör: BOMB1)
@@ -126,13 +138,14 @@ export default function Lobby() {
 
   // 2. Tam Davet Linkini Kopyala
   const copyFullLink = () => {
+    const objId = roomManager.objectId;
     let link;
     if (window.location.hostname.includes('github.io')) {
-      link = `https://berenysrr.github.io/defuse-the-bomb/#room=${roomCode}`;
+      link = `https://berenysrr.github.io/defuse-the-bomb/#room=${roomCode}${objId ? `&id=${objId}` : ''}`;
     } else {
       const baseUrl = window.location.href.split('#')[0].split('?')[0];
       const cleanBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-      link = `${cleanBase}#room=${roomCode}`;
+      link = `${cleanBase}#room=${roomCode}${objId ? `&id=${objId}` : ''}`;
     }
     navigator.clipboard.writeText(link);
     setCopiedLink(true);
